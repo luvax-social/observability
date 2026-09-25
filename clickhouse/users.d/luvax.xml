@@ -1,7 +1,12 @@
 <clickhouse>
     <profiles>
         <reader>
-            <readonly>1</readonly>
+            <!-- readonly=1 forbids changing any setting for the session, but every query the
+                 Grafana ClickHouse plugin sends carries its own max_execution_time override;
+                 under readonly=1 that override itself is rejected before the query ever runs.
+                 readonly=2 keeps every write forbidden while still allowing a query to set its
+                 own session settings. -->
+            <readonly>2</readonly>
             <max_memory_usage>1000000000</max_memory_usage>
             <max_execution_time>60</max_execution_time>
             <max_result_rows>100000</max_result_rows>
