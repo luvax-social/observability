@@ -1,10 +1,22 @@
 <clickhouse>
+    <!-- The base image's config.xml ships listen_host pinned to ::1 / 127.0.0.1, and its
+         entrypoint only widens that to every interface when no config.d override is present.
+         Mounting this file counts as an override, so without this line ClickHouse is unreachable
+         from any other container on the network, including the collector and Grafana. -->
+    <listen_host>0.0.0.0</listen_host>
     <max_server_memory_usage_to_ram_ratio>0.8</max_server_memory_usage_to_ram_ratio>
     <mark_cache_size>268435456</mark_cache_size>
     <index_mark_cache_size>134217728</index_mark_cache_size>
     <uncompressed_cache_size>0</uncompressed_cache_size>
     <max_concurrent_queries>50</max_concurrent_queries>
     <background_pool_size>4</background_pool_size>
+    <!-- 26.3's default (20) exceeds background_pool_size * background_merges_mutations_concurrency_ratio
+         (4 * 2 = 8) on this memory-constrained pool, which fails the server's own startup sanity
+         check. Lowered to stay under that product. -->
+    <merge_tree>
+        <number_of_free_entries_in_pool_to_execute_mutation>4</number_of_free_entries_in_pool_to_execute_mutation>
+        <number_of_free_entries_in_pool_to_execute_optimize_entire_partition>4</number_of_free_entries_in_pool_to_execute_optimize_entire_partition>
+    </merge_tree>
     <prometheus>
         <endpoint>/metrics</endpoint>
         <port>9363</port>
