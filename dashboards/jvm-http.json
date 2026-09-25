@@ -32,6 +32,8 @@
       "fieldConfig": {
         "defaults": {
           "unit": "percentunit",
+          "min": 0,
+          "max": 1,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -46,7 +48,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(http_server_requests_seconds_count{job=\"luvax-backend\",status=~\"5..\"}[$__rate_interval])) / sum(rate(http_server_requests_seconds_count{job=\"luvax-backend\"}[$__rate_interval]))",
+          "expr": "clamp((sum(rate(http_server_requests_seconds_count{job=\"luvax-backend\",status=~\"5..\"}[$__rate_interval])) or vector(0)) / sum(rate(http_server_requests_seconds_count{job=\"luvax-backend\"}[$__rate_interval])), 0, 1)",
           "legendFormat": "5xx ratio"
         }
       ]

@@ -24,8 +24,8 @@
         "name": "level",
         "type": "custom",
         "label": "Level",
-        "query": "TRACE,DEBUG,INFO,WARN,ERROR",
-        "current": { "text": "", "value": "" }
+        "query": "All,TRACE,DEBUG,INFO,WARN,ERROR",
+        "current": { "text": "All", "value": "All" }
       },
       {
         "name": "search",
@@ -75,7 +75,7 @@
           "refId": "A",
           "queryType": "sql",
           "format": 3,
-          "rawSql": "SELECT Timestamp AS timestamp, Body AS body, SeverityText AS level, TraceId AS traceID, SpanId AS spanID, ServiceName, ResourceAttributes['container.name'] AS container FROM otel.otel_logs WHERE $__timeFilter(Timestamp) AND ServiceName IN (${service:singlequote}) AND ('${level}' = '' OR SeverityText = '${level}') AND ('${search}' = '' OR positionCaseInsensitive(Body, '${search}') > 0) AND ('${traceId}' = '' OR TraceId = '${traceId}') ORDER BY Timestamp DESC LIMIT 1000"
+          "rawSql": "SELECT Timestamp AS timestamp, Body AS body, SeverityText AS level, TraceId AS traceID, SpanId AS spanID, ServiceName, ResourceAttributes['container.name'] AS container FROM otel.otel_logs WHERE $__timeFilter(Timestamp) AND ServiceName IN (${service:singlequote}) AND ('${level}' = 'All' OR SeverityText = '${level}') AND ('${search}' = '' OR positionCaseInsensitive(Body, '${search}') > 0) AND ('${traceId}' = '' OR TraceId = '${traceId}') ORDER BY Timestamp DESC LIMIT 1000"
         }
       ]
     }
