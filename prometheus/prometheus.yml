@@ -10,6 +10,7 @@ scrape_configs:
   - job_name: luvax-backend
     file_sd_configs:
       - files: ["/etc/prometheus/targets/backend.yml"]
+    metrics_path: /actuator/prometheus
 
   - job_name: rabbitmq
     file_sd_configs:

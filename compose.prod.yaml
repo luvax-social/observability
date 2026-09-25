@@ -53,7 +53,13 @@ services:
       GF_SERVER_ROOT_URL: https://grafana.luvax.online/
       GF_SECURITY_COOKIE_SECURE: "true"
       GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD}
-      GF_DISCORD_WEBHOOK_URL: ${GF_DISCORD_WEBHOOK_URL}
+      # contact-points.yaml requires a syntactically valid, non-empty URL: Grafana's discord
+      # contact point fails provisioning validation on an empty one, and that failure is fatal to
+      # the whole server, not just to alerting. R5 deploys this resource before R9 sets the real
+      # webhook, so without a placeholder default Grafana would crash-loop from first deploy until
+      # R9 runs. The placeholder domain never resolves, so a rule that fires in that window just
+      # fails its HTTP send silently.
+      GF_DISCORD_WEBHOOK_URL: ${GF_DISCORD_WEBHOOK_URL:-https://discord.com/api/webhooks/000000000000000000/placeholder-pending-r9}
       GF_PLUGINS_PREINSTALL_SYNC: grafana-clickhouse-datasource@4.21.3
       CLICKHOUSE_GRAFANA_PASSWORD: ${CLICKHOUSE_GRAFANA_PASSWORD}
       PG_STATS_HOST: ${PG_STATS_HOST}

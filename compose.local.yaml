@@ -65,7 +65,12 @@ services:
       GF_SERVER_ROOT_URL: http://localhost:3000/
       GF_SECURITY_COOKIE_SECURE: "false"
       GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD}
-      GF_DISCORD_WEBHOOK_URL: ${GF_DISCORD_WEBHOOK_URL}
+      # contact-points.yaml requires a syntactically valid, non-empty URL: Grafana's discord
+      # contact point fails provisioning validation on an empty one, and that failure is fatal to
+      # the whole server, not just to alerting. Left blank in .env (the documented way to opt out
+      # of alerts locally), Grafana would otherwise crash-loop on every boot. The placeholder
+      # domain never resolves, so a rule that somehow fires just fails its HTTP send silently.
+      GF_DISCORD_WEBHOOK_URL: ${GF_DISCORD_WEBHOOK_URL:-https://discord.com/api/webhooks/000000000000000000/placeholder-no-local-alerts}
       GF_PLUGINS_PREINSTALL_SYNC: grafana-clickhouse-datasource@4.21.3
       CLICKHOUSE_GRAFANA_PASSWORD: ${CLICKHOUSE_GRAFANA_PASSWORD}
       PG_STATS_HOST: postgres
