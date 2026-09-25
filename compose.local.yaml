@@ -1,0 +1,203 @@
+# Off by default: `docker compose -f observability/compose.local.yaml up -d` starts nothing.
+# Every service carries `profiles: ["observability"]`, so it only starts with
+# `docker compose -f observability/compose.local.yaml --profile observability up -d`,
+# run after the backend's own `docker compose up -d`.
+networks:
+  default:
+    name: luvax-local
+    external: true
+
+services:
+  clickhouse:
+    # Pinned to the 26.3 LTS line. From 26.6 the official build targets x86-64-v3 (AVX2); the
+    # production host's CPU has no AVX2, and 26.8.10.6 was reproduced crashing with SIGILL there.
+    # Do not move past 26.5 on this host (see section 2 of the observability plan).
+    image: clickhouse/clickhouse-server:26.3.33.24
+    profiles: ["observability"]
+    restart: unless-stopped
+    mem_limit: 4096m
+    cpus: 0.70
+    ulimits:
+      nofile: 262144
+    environment:
+      CLICKHOUSE_USER: otel_writer
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_OTEL_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      CLICKHOUSE_GRAFANA_PASSWORD: ${CLICKHOUSE_GRAFANA_PASSWORD}
+    ports:
+      - "127.0.0.1:8123:8123"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./clickhouse/config.d:/etc/clickhouse-server/config.d:ro
+      - ./clickhouse/users.d:/etc/clickhouse-server/users.d:ro
+      - ./clickhouse/initdb:/docker-entrypoint-initdb.d:ro
+
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    profiles: ["observability"]
+    restart: unless-stopped
+    mem_limit: 1536m
+    cpus: 0.40
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=30d
+      - --storage.tsdb.retention.size=10GB
+      - --web.enable-lifecycle
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - prometheus-data:/prometheus
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/targets/local:/etc/prometheus/targets:ro
+
+  grafana:
+    image: grafana/grafana:13.2.2
+    profiles: ["observability"]
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 0.25
+    environment:
+      GF_SERVER_ROOT_URL: http://localhost:3000/
+      GF_SECURITY_COOKIE_SECURE: "false"
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD}
+      GF_DISCORD_WEBHOOK_URL: ${GF_DISCORD_WEBHOOK_URL}
+      GF_PLUGINS_PREINSTALL_SYNC: grafana-clickhouse-datasource@4.21.3
+      CLICKHOUSE_GRAFANA_PASSWORD: ${CLICKHOUSE_GRAFANA_PASSWORD}
+      PG_STATS_HOST: postgres
+      PG_STATS_DATABASE: ${POSTGRES_DB}
+      POSTGRES_MONITOR_PASSWORD: ${POSTGRES_MONITOR_PASSWORD}
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/grafana.ini:/etc/grafana/grafana.ini:ro
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./dashboards:/etc/grafana/dashboards:ro
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.161.0
+    profiles: ["observability"]
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 0.25
+    user: "0"
+    labels:
+      luvax.logs.exclude: "true"
+    environment:
+      CLICKHOUSE_OTEL_PASSWORD: ${CLICKHOUSE_OTEL_PASSWORD}
+      BACKEND_COOLIFY_RESOURCE_NAME: luvax-prod
+      LOG_CONTAINER_POSTGRES: backend-postgres-1
+      LOG_CONTAINER_REDIS: backend-redis-1
+      LOG_CONTAINER_RABBITMQ: backend-rabbitmq-1
+      LOG_CONTAINER_ELASTICSEARCH: backend-elasticsearch-1
+      LOG_CONTAINER_GORSE: backend-gorse-1
+      DEPLOYMENT_ENVIRONMENT: local
+    ports:
+      - "127.0.0.1:4317:4317"
+      - "127.0.0.1:4318:4318"
+    volumes:
+      - otelcol-storage:/var/lib/otelcol/storage
+      - ./otel-collector/config.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    depends_on:
+      - docker-socket-proxy
+      - clickhouse
+
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:v0.5.0
+    profiles: ["observability"]
+    restart: unless-stopped
+    mem_limit: 64m
+    cpus: 0.05
+    environment:
+      CONTAINERS: 1
+      EVENTS: 1
+      PING: 1
+      VERSION: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
+    profiles: ["observability"]
+    restart: unless-stopped
+    mem_limit: 128m
+    cpus: 0.05
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      DATA_SOURCE_URI: "host.docker.internal:5432/${POSTGRES_DB}?sslmode=disable"
+      DATA_SOURCE_USER: luvax_monitor
+      DATA_SOURCE_PASS: ${POSTGRES_MONITOR_PASSWORD}
+    command:
+      - --collector.stat_statements
+      - --collector.stat_statements.include_query
+      - --collector.stat_statements.query_length=500
+      - --collector.stat_statements.limit=200
+      - --collector.long_running_transactions
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.92.0
+    profiles: ["observability"]
+    restart: unless-stopped
+    mem_limit: 64m
+    cpus: 0.05
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      REDIS_ADDR: redis://host.docker.internal:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+
+  elasticsearch-exporter:
+    image: quay.io/prometheuscommunity/elasticsearch-exporter:v1.11.0
+    profiles: ["observability"]
+    restart: unless-stopped
+    mem_limit: 128m
+    cpus: 0.05
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command:
+      - --es.uri=http://host.docker.internal:9200
+      - --es.indices
+
+  node-exporter:
+    image: prom/node-exporter:v1.12.1
+    profiles: ["observability"]
+    restart: unless-stopped
+    mem_limit: 64m
+    cpus: 0.05
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    command:
+      - --path.rootfs=/host
+
+  cadvisor:
+    image: ghcr.io/google/cadvisor:v0.60.6
+    profiles: ["observability"]
+    restart: unless-stopped
+    mem_limit: 384m
+    cpus: 0.15
+    privileged: true
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=30s
+      - --store_container_labels=false
+      - --whitelisted_container_labels=coolify.resourceName
+
+volumes:
+  clickhouse-data:
+  prometheus-data:
+  grafana-data:
+  otelcol-storage:

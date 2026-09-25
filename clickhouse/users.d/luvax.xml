@@ -1,0 +1,10 @@
+<clickhouse>
+    <profiles>
+        <reader>
+            <readonly>1</readonly>
+            <max_memory_usage>1000000000</max_memory_usage>
+            <max_execution_time>60</max_execution_time>
+            <max_result_rows>100000</max_result_rows>
+        </reader>
+    </profiles>
+</clickhouse>

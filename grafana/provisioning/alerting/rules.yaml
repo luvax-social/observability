@@ -1,0 +1,171 @@
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: baseline
+    folder: Luvax
+    interval: 1m
+    rules:
+      - uid: luvax-dlq-not-empty
+        title: DLQ not empty
+        condition: C
+        for: 2m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations: {}
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              expr: max by (queue) (rabbitmq_detailed_queue_messages{queue=~".+\\.dlq"})
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+
+      - uid: luvax-outbox-dead-rows
+        title: Outbox DEAD rows
+        condition: C
+        for: 1m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations: {}
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              expr: max(luvax_outbox_events{status="DEAD"})
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+
+      - uid: luvax-circuit-breaker-open
+        title: Circuit breaker open
+        condition: C
+        for: 1m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations: {}
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              expr: max by (name) (resilience4j_circuitbreaker_state{state=~"open|forced_open"})
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+
+      - uid: luvax-container-restart-loop
+        title: Container restart loop
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations: {}
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              expr: max by (name) (changes(container_start_time_seconds{name!=""}[15m]))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gte, params: [3] }
+
+      - uid: luvax-disk-above-85-percent
+        title: Disk above 85 percent
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations: {}
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              expr: >-
+                max by (mountpoint) (100 * (1 -
+                node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"} /
+                node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"}))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [85] }
+
+      - uid: luvax-scrape-target-down
+        title: Scrape target down
+        condition: C
+        for: 2m
+        noDataState: Alerting
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations: {}
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              expr: min by (job, instance) (up)
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [1] }

@@ -1,0 +1,127 @@
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  file_storage:
+    directory: /var/lib/otelcol/storage
+  docker_observer:
+    endpoint: "tcp://docker-socket-proxy:2375"
+    include_all_containers: true
+    api_version: "1.44"
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  receiver_creator/docker_logs:
+    watch_observers: [docker_observer]
+    receivers:
+      filelog:
+        rule: >-
+          type == "container" && port == 0 &&
+          labels["luvax.logs.exclude"] != "true" &&
+          labels["coolify.resourceName"] != "${env:BACKEND_COOLIFY_RESOURCE_NAME}"
+        config:
+          include:
+            - /var/lib/docker/containers/`container_id`/*-json.log
+          include_file_path: true
+          start_at: beginning
+          storage: file_storage
+          operators:
+            - type: json_parser
+              timestamp:
+                parse_from: attributes.time
+                layout: "%Y-%m-%dT%H:%M:%S.%LZ"
+            - type: move
+              from: attributes.log
+              to: body
+            - type: remove
+              field: attributes.time
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 400
+    spike_limit_mib: 100
+
+  # Turns a container-log record's discovered container name/labels into the ServiceName the
+  # ClickHouse exporter writes, using the same stable-name-first rule as item 7: an explicit map
+  # from the five known local container names, falling back to the coolify.resourceName label,
+  # falling back to the raw container name.
+  transform/container_service_name:
+    log_statements:
+      - context: resource
+        statements:
+          - set(attributes["service.name"], "postgres") where attributes["container.name"] == "${env:LOG_CONTAINER_POSTGRES}"
+          - set(attributes["service.name"], "redis") where attributes["container.name"] == "${env:LOG_CONTAINER_REDIS}"
+          - set(attributes["service.name"], "rabbitmq") where attributes["container.name"] == "${env:LOG_CONTAINER_RABBITMQ}"
+          - set(attributes["service.name"], "elasticsearch") where attributes["container.name"] == "${env:LOG_CONTAINER_ELASTICSEARCH}"
+          - set(attributes["service.name"], "gorse") where attributes["container.name"] == "${env:LOG_CONTAINER_GORSE}"
+          - set(attributes["service.name"], attributes["docker.label.coolify.resourceName"]) where attributes["service.name"] == nil and attributes["docker.label.coolify.resourceName"] != nil
+          - set(attributes["service.name"], attributes["container.name"]) where attributes["service.name"] == nil
+
+  resource/environment:
+    attributes:
+      - key: deployment.environment
+        value: ${env:DEPLOYMENT_ENVIRONMENT}
+        action: upsert
+
+  batch:
+    send_batch_size: 8192
+    timeout: 5s
+
+exporters:
+  clickhouse/logs:
+    endpoint: tcp://clickhouse:9000?dial_timeout=10s
+    database: otel
+    username: otel_writer
+    password: ${env:CLICKHOUSE_OTEL_PASSWORD}
+    ttl: 336h
+    create_schema: true
+    logs_table_name: otel_logs
+    retry_on_failure:
+      enabled: true
+      max_elapsed_time: 300s
+    sending_queue:
+      queue_size: 1000
+
+  clickhouse/traces:
+    endpoint: tcp://clickhouse:9000?dial_timeout=10s
+    database: otel
+    username: otel_writer
+    password: ${env:CLICKHOUSE_OTEL_PASSWORD}
+    ttl: 168h
+    create_schema: true
+    traces_table_name: otel_traces
+    retry_on_failure:
+      enabled: true
+      max_elapsed_time: 300s
+    sending_queue:
+      queue_size: 1000
+
+service:
+  telemetry:
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
+  extensions: [health_check, file_storage, docker_observer]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resource/environment, batch]
+      exporters: [clickhouse/traces]
+    logs/application:
+      receivers: [otlp]
+      processors: [memory_limiter, resource/environment, batch]
+      exporters: [clickhouse/logs]
+    logs/containers:
+      receivers: [receiver_creator/docker_logs]
+      processors: [memory_limiter, transform/container_service_name, resource/environment, batch]
+      exporters: [clickhouse/logs]

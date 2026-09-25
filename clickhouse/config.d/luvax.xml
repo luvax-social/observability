@@ -1,0 +1,27 @@
+<clickhouse>
+    <max_server_memory_usage_to_ram_ratio>0.8</max_server_memory_usage_to_ram_ratio>
+    <mark_cache_size>268435456</mark_cache_size>
+    <index_mark_cache_size>134217728</index_mark_cache_size>
+    <uncompressed_cache_size>0</uncompressed_cache_size>
+    <max_concurrent_queries>50</max_concurrent_queries>
+    <background_pool_size>4</background_pool_size>
+    <prometheus>
+        <endpoint>/metrics</endpoint>
+        <port>9363</port>
+        <metrics>true</metrics>
+        <events>true</events>
+        <asynchronous_metrics>true</asynchronous_metrics>
+    </prometheus>
+    <logger>
+        <level>information</level>
+        <console>1</console>
+    </logger>
+    <query_log>
+        <ttl>event_date + INTERVAL 7 DAY DELETE</ttl>
+    </query_log>
+    <trace_log remove="1"/>
+    <text_log remove="1"/>
+    <metric_log remove="1"/>
+    <asynchronous_metric_log remove="1"/>
+    <processors_profile_log remove="1"/>
+</clickhouse>

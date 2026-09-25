@@ -1,0 +1,16 @@
+apiVersion: 1
+contactPoints:
+  - orgId: 1
+    name: discord
+    receivers:
+      - uid: discord-luvax
+        type: discord
+        settings:
+          url: ${GF_DISCORD_WEBHOOK_URL}
+          use_discord_username: false
+          message: |
+            **{{ .CommonLabels.alertname }}** ({{ .Status }})
+            {{ range .Alerts }}{{ range .Labels.SortedPairs }}{{ .Name }}={{ .Value }} {{ end }}
+            value: {{ .ValueString }}
+            {{ end }}
+            https://grafana.luvax.online/dashboards/f/luvax
