@@ -29,7 +29,10 @@ services:
     volumes:
       - clickhouse-data:/var/lib/clickhouse
       - ./clickhouse/config.d:/etc/clickhouse-server/config.d:ro
-      - ./clickhouse/users.d:/etc/clickhouse-server/users.d:ro
+      # Not read-only: the official entrypoint writes users.d/default-user.xml here at first boot
+      # to disable the "default" user in favour of CLICKHOUSE_USER, and fails to start without
+      # write access to this directory.
+      - ./clickhouse/users.d:/etc/clickhouse-server/users.d
       - ./clickhouse/initdb:/docker-entrypoint-initdb.d:ro
 
   prometheus:
