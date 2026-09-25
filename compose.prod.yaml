@@ -1,0 +1,177 @@
+# Coolify "Docker Compose Empty" resource. Every bind mount is an absolute host path under
+# /data/luvax/observability, which R1 of the production runbook populates by running
+# scripts/sync-to-host.sh; there is no repo checkout on the host for Coolify to resolve a
+# relative path against.
+services:
+  clickhouse:
+    # Pinned to the 26.3 LTS line. From 26.6 the official build targets x86-64-v3 (AVX2); the
+    # production host's CPU has no AVX2, and 26.8.10.6 was reproduced crashing with SIGILL there.
+    # Do not move past 26.5 on this host (see section 2 of the observability plan).
+    image: clickhouse/clickhouse-server:26.3.33.24
+    restart: unless-stopped
+    mem_limit: 4096m
+    cpus: 0.70
+    ulimits:
+      nofile: 262144
+    environment:
+      CLICKHOUSE_USER: otel_writer
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_OTEL_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      CLICKHOUSE_GRAFANA_PASSWORD: ${CLICKHOUSE_GRAFANA_PASSWORD}
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - /data/luvax/observability/clickhouse/config.d:/etc/clickhouse-server/config.d:ro
+      - /data/luvax/observability/clickhouse/users.d:/etc/clickhouse-server/users.d:ro
+      - /data/luvax/observability/clickhouse/initdb:/docker-entrypoint-initdb.d:ro
+
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    restart: unless-stopped
+    mem_limit: 1536m
+    cpus: 0.40
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=30d
+      - --storage.tsdb.retention.size=10GB
+      - --web.enable-lifecycle
+    volumes:
+      - prometheus-data:/prometheus
+      - /data/luvax/observability/prometheus/prometheus.prod.yml:/etc/prometheus/prometheus.yml:ro
+      - /data/luvax/observability/prometheus/targets/prod:/etc/prometheus/targets:ro
+
+  grafana:
+    image: grafana/grafana:13.2.2
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 0.25
+    expose:
+      - "3000"
+    environment:
+      GF_SERVER_ROOT_URL: https://grafana.luvax.online/
+      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD}
+      GF_DISCORD_WEBHOOK_URL: ${GF_DISCORD_WEBHOOK_URL}
+      GF_PLUGINS_PREINSTALL_SYNC: grafana-clickhouse-datasource@4.21.3
+      CLICKHOUSE_GRAFANA_PASSWORD: ${CLICKHOUSE_GRAFANA_PASSWORD}
+      PG_STATS_HOST: ${PG_STATS_HOST}
+      PG_STATS_DATABASE: ${PG_STATS_DATABASE}
+      POSTGRES_MONITOR_PASSWORD: ${POSTGRES_MONITOR_PASSWORD}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - /data/luvax/observability/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
+      - /data/luvax/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - /data/luvax/observability/dashboards:/etc/grafana/dashboards:ro
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.161.0
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 0.25
+    user: "0"
+    labels:
+      luvax.logs.exclude: "true"
+    environment:
+      CLICKHOUSE_OTEL_PASSWORD: ${CLICKHOUSE_OTEL_PASSWORD}
+      BACKEND_COOLIFY_RESOURCE_NAME: ${BACKEND_COOLIFY_RESOURCE_NAME}
+      LOG_CONTAINER_POSTGRES: ${LOG_CONTAINER_POSTGRES}
+      LOG_CONTAINER_REDIS: ${LOG_CONTAINER_REDIS}
+      LOG_CONTAINER_RABBITMQ: ${LOG_CONTAINER_RABBITMQ}
+      LOG_CONTAINER_ELASTICSEARCH: ${LOG_CONTAINER_ELASTICSEARCH}
+      LOG_CONTAINER_GORSE: ${LOG_CONTAINER_GORSE}
+      DEPLOYMENT_ENVIRONMENT: prod
+    volumes:
+      - otelcol-storage:/var/lib/otelcol/storage
+      - /data/luvax/observability/otel-collector/config.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    depends_on:
+      - docker-socket-proxy
+      - clickhouse
+
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:v0.5.0
+    restart: unless-stopped
+    mem_limit: 64m
+    cpus: 0.05
+    environment:
+      CONTAINERS: 1
+      EVENTS: 1
+      PING: 1
+      VERSION: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
+    restart: unless-stopped
+    mem_limit: 128m
+    cpus: 0.05
+    environment:
+      DATA_SOURCE_URI: "${PG_STATS_HOST}:5432/${PG_STATS_DATABASE}?sslmode=disable"
+      DATA_SOURCE_USER: luvax_monitor
+      DATA_SOURCE_PASS: ${POSTGRES_MONITOR_PASSWORD}
+    command:
+      - --collector.stat_statements
+      - --collector.stat_statements.include_query
+      - --collector.stat_statements.query_length=500
+      - --collector.stat_statements.limit=200
+      - --collector.long_running_transactions
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.92.0
+    restart: unless-stopped
+    mem_limit: 64m
+    cpus: 0.05
+    environment:
+      REDIS_ADDR: redis://ijrhuhxwedr7y0pmjhputc5f:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+
+  elasticsearch-exporter:
+    image: quay.io/prometheuscommunity/elasticsearch-exporter:v1.11.0
+    restart: unless-stopped
+    mem_limit: 128m
+    cpus: 0.05
+    environment:
+      ES_USERNAME: luvax_monitor
+      ES_PASSWORD: ${ES_MONITOR_PASSWORD}
+    command:
+      # --es.ssl-skip-verify is appended only if R0 finds a self-signed certificate.
+      - --es.uri=${ES_URI_SCHEME}://elasticsearch-pzocsus3ji5bb3dqdjh8zqor:9200
+      - --es.indices
+
+  node-exporter:
+    image: prom/node-exporter:v1.12.1
+    restart: unless-stopped
+    mem_limit: 64m
+    cpus: 0.05
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    command:
+      - --path.rootfs=/host
+
+  cadvisor:
+    image: ghcr.io/google/cadvisor:v0.60.6
+    restart: unless-stopped
+    mem_limit: 384m
+    cpus: 0.15
+    privileged: true
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=30s
+      - --store_container_labels=false
+      - --whitelisted_container_labels=coolify.resourceName
+
+volumes:
+  clickhouse-data:
+  prometheus-data:
+  grafana-data:
+  otelcol-storage:

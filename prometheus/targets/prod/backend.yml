@@ -1,0 +1,5 @@
+# Kept for parity with targets/local/backend.yml (R1 verifies every file in the section 5.1
+# tree exists on the host). Not read by any job: prometheus.prod.yml scrapes luvax-backend
+# through dns_sd_configs instead, because a rolling deploy needs both the outgoing and the
+# incoming container discovered at once, which a static file cannot express.
+- targets: ["luvax-backend:8081"]
