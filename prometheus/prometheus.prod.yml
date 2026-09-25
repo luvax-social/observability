@@ -10,6 +10,7 @@ scrape_configs:
   - job_name: luvax-backend
     # DNS A-record discovery, not file_sd: during a Coolify rolling deploy the network alias
     # resolves to both the outgoing and the incoming backend container, and both must be scraped.
+    metrics_path: /actuator/prometheus
     dns_sd_configs:
       - names: ["luvax-backend"]
         type: A
