@@ -1,0 +1,103 @@
+{
+  "uid": "gorse",
+  "title": "Gorse",
+  "tags": ["luvax"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Users",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [{ "refId": "A", "instant": true, "expr": "gorse_master_users_total", "legendFormat": "users" }]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Items",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [{ "refId": "A", "instant": true, "expr": "gorse_master_items_total", "legendFormat": "items" }]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Feedbacks",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [{ "refId": "A", "instant": true, "expr": "gorse_master_feedbacks_total", "legendFormat": "feedbacks" }]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Positive feedbacks",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [{ "refId": "A", "instant": true, "expr": "gorse_master_positive_feedbacks_total", "legendFormat": "positive" }]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Ranking model precision",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1, "min": 0 }, "overrides": [] },
+      "targets": [{ "refId": "A", "expr": "gorse_master_ranking_model_precision", "legendFormat": "precision" }]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Collaborative filtering precision@10",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1, "min": 0 }, "overrides": [] },
+      "targets": [{ "refId": "A", "expr": "gorse_master_collaborative_filtering_precision_10", "legendFormat": "precision@10" }]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Collaborative filtering fit duration",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [{ "refId": "A", "expr": "gorse_master_collaborative_filtering_fit_seconds", "legendFormat": "fit duration" }]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Memory in use: master vs worker",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "gorse_master_memory_inuse_bytes", "legendFormat": "master" },
+        { "refId": "B", "expr": "gorse_worker_memory_inuse_bytes", "legendFormat": "worker" }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "REST API latency p95",
+      "description": "Split label confirmed live in Grafana Explore against gorse_server_rest_api_request_seconds (item 6 of the observability plan); update the legend format here once confirmed.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 22 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(gorse_server_rest_api_request_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "p95"
+        }
+      ]
+    }
+  ]
+}

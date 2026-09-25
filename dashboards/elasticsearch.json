@@ -1,0 +1,78 @@
+{
+  "uid": "elasticsearch",
+  "title": "Elasticsearch",
+  "tags": ["luvax"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "state-timeline",
+      "title": "Cluster health",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [
+            { "type": "value", "options": { "1": { "text": "healthy", "color": "green" } } }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        { "refId": "A", "expr": "elasticsearch_cluster_health_status{color=\"green\"}", "legendFormat": "green" },
+        { "refId": "B", "expr": "elasticsearch_cluster_health_status{color=\"yellow\"}", "legendFormat": "yellow" },
+        { "refId": "C", "expr": "elasticsearch_cluster_health_status{color=\"red\"}", "legendFormat": "red" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "JVM heap used",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [{ "refId": "A", "expr": "elasticsearch_jvm_memory_used_bytes{area=\"heap\"}", "legendFormat": "heap used" }]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Documents by index",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [{ "refId": "A", "expr": "elasticsearch_indices_docs_primary", "legendFormat": "{{index}}" }]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Search rate",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "targets": [{ "refId": "A", "expr": "rate(elasticsearch_indices_search_query_total[$__rate_interval])", "legendFormat": "search/s" }]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Indexing rate",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "targets": [{ "refId": "A", "expr": "rate(elasticsearch_indices_indexing_index_total[$__rate_interval])", "legendFormat": "index/s" }]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Filesystem available",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [{ "refId": "A", "expr": "elasticsearch_filesystem_data_available_bytes", "legendFormat": "available" }]
+    }
+  ]
+}

@@ -1,0 +1,132 @@
+{
+  "uid": "postgresql",
+  "title": "PostgreSQL",
+  "tags": ["luvax"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Up",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [{ "refId": "A", "instant": true, "expr": "pg_up", "legendFormat": "up" }]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Backends by database",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [{ "refId": "A", "expr": "pg_stat_database_numbackends", "legendFormat": "{{datname}}" }]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Commits and rollbacks",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "rate(pg_stat_database_xact_commit[$__rate_interval])", "legendFormat": "commit {{datname}}" },
+        { "refId": "B", "expr": "rate(pg_stat_database_xact_rollback[$__rate_interval])", "legendFormat": "rollback {{datname}}" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Cache hit ratio",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1, "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(pg_stat_database_blks_hit[$__rate_interval])) / (sum(rate(pg_stat_database_blks_hit[$__rate_interval])) + sum(rate(pg_stat_database_blks_read[$__rate_interval])))",
+          "legendFormat": "cache hit ratio"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Deadlocks",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [{ "refId": "A", "expr": "increase(pg_stat_database_deadlocks[$__range])", "legendFormat": "{{datname}}" }]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Database size",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [{ "refId": "A", "expr": "pg_database_size_bytes", "legendFormat": "{{datname}}" }]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Longest running transaction",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "pg_long_running_transactions_oldest_timestamp_seconds", "legendFormat": "oldest transaction" }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Top statements by total time (top 15)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "format": "table", "instant": true, "expr": "topk(15, rate(pg_stat_statements_seconds_total[$__rate_interval]))" }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Phase 3 baseline: message tables",
+      "description": "Reads pg_stat_statements directly; the exporter keeps only the top statements across all tables and the message queries may not rank in them.",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 32 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-stats" },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "total_ms" }, "properties": [{ "id": "unit", "value": "ms" }] },
+          { "matcher": { "id": "byName", "options": "mean_ms" }, "properties": [{ "id": "unit", "value": "ms" }] },
+          { "matcher": { "id": "byName", "options": "stddev_ms" }, "properties": [{ "id": "unit", "value": "ms" }] }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT left(regexp_replace(query, '\\s+', ' ', 'g'), 300) AS query, calls, round(total_exec_time::numeric, 1) AS total_ms, round(mean_exec_time::numeric, 3) AS mean_ms, round(stddev_exec_time::numeric, 3) AS stddev_ms, rows, shared_blks_hit, shared_blks_read FROM pg_stat_statements WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) AND query ~* '\\m(messages|conversations|conversation_participants)\\M' ORDER BY total_exec_time DESC LIMIT 50"
+        }
+      ]
+    }
+  ]
+}

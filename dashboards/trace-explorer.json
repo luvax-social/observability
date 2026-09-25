@@ -1,0 +1,72 @@
+{
+  "uid": "trace-explorer",
+  "title": "Trace Explorer",
+  "tags": ["luvax"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "traceId",
+        "type": "textbox",
+        "label": "Trace ID",
+        "current": { "text": "", "value": "" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "table",
+      "title": "Traces",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "duration_ms" }, "properties": [{ "id": "unit", "value": "ms" }] },
+          {
+            "matcher": { "id": "byName", "options": "TraceId" },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  { "title": "Open trace", "url": "/d/trace-explorer?var-traceId=${__data.fields.TraceId}" },
+                  {
+                    "title": "Logs for trace",
+                    "url": "/d/logs-explorer?var-traceId=${__data.fields.TraceId}&${__url_time_range}"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "sql",
+          "format": 1,
+          "rawSql": "SELECT TraceId, min(Timestamp) AS start, anyIf(SpanName, ParentSpanId = '') AS root, anyIf(ServiceName, ParentSpanId = '') AS service, max(Duration) / 1e6 AS duration_ms, countIf(StatusCode = 'Error') AS errors, count() AS spans FROM otel.otel_traces WHERE $__timeFilter(Timestamp) GROUP BY TraceId ORDER BY start DESC LIMIT 200"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "traces",
+      "title": "Trace",
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 10 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "traces",
+          "traceId": "${traceId}"
+        }
+      ]
+    }
+  ]
+}
