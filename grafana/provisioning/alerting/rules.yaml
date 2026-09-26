@@ -2,7 +2,13 @@ apiVersion: 1
 groups:
   - orgId: 1
     name: baseline
-    folder: Luvax
+    # Phase 1.5: moved from folder "Luvax" to its own "Alerting" folder. The old flat "Luvax"
+    # folder is deleted once empty (docs/deployment-handoff.md, "Phase 1.5" runbook); alert rule
+    # groups share the same folder namespace as dashboards, so leaving this group parented under
+    # "Luvax" would have orphaned it the moment that folder was deleted. Alert rules get their own
+    # folder instead of joining one of the five dashboard category folders, since a rule group
+    # is not "about" any one category the way a dashboard is.
+    folder: Alerting
     interval: 1m
     rules:
       - uid: luvax-dlq-not-empty
@@ -169,3 +175,225 @@ groups:
               expression: A
               conditions:
                 - evaluator: { type: lt, params: [1] }
+
+  - orgId: 1
+    name: phase-1-5
+    folder: Alerting
+    interval: 1m
+    rules:
+      # New in Phase 1.5. Probes the Coolify proxy's origin certificate directly (see
+      # blackbox-exporter/config.yml and prometheus/prometheus.prod.yml, job blackbox-origin-tls),
+      # not the public https://<host> edge, which only ever measures Cloudflare's own certificate
+      # and would never detect a failed Let's Encrypt renewal on Traefik. grafana.luvax.online is
+      # excluded (its tunnel route presents Traefik's default certificate by design).
+      # noDataState: OK, not Alerting - if the blackbox-exporter target itself is unreachable, the
+      # existing "Scrape target down" rule (job=blackbox-origin-tls) already covers that; this rule
+      # would otherwise double-alert on the same underlying outage.
+      - uid: luvax-origin-tls-cert-expiring
+        title: Origin TLS certificate expiring or probe failing
+        condition: C
+        for: 30m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: >-
+            {{ if (eq (index $values "ThreshProbe").Value 1.0) }}Origin TLS probe is failing for
+            {{ $labels.hostname }}{{ else }}Origin TLS certificate for {{ $labels.hostname }} is
+            expiring within 14 days{{ end }}
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              expr: (probe_ssl_earliest_cert_expiry{job="blackbox-origin-tls"} - time()) / 86400
+          - refId: B
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: B
+              instant: true
+              range: false
+              expr: probe_success{job="blackbox-origin-tls"}
+          - refId: ThreshDays
+            datasourceUid: __expr__
+            model:
+              refId: ThreshDays
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [14] }
+          - refId: ThreshProbe
+            datasourceUid: __expr__
+            model:
+              refId: ThreshProbe
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: math
+              expression: "$ThreshDays || $ThreshProbe"
+
+      # New in Phase 1.5. Catches a consumer wedged or cancelled without its container crashing or
+      # restarting (the queue-level counterpart to the existing "Container restart loop" rule's
+      # coverage of the Gorse SIGILL crash loop). Every *.dlq queue is excluded - DLQs have no
+      # consumers by design and are the "DLQ not empty" rule's job, not this one's. Pending 5m so a
+      # backend rolling deploy's brief consumer reconnect window never fires it.
+      - uid: luvax-rabbitmq-queue-stalled
+        title: RabbitMQ queue stalled
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: Queue {{ $labels.queue }} has ready messages and zero consumers
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              expr: >-
+                max by (queue) (rabbitmq_detailed_queue_messages_ready{queue!~".+\\.dlq"}) and on
+                (queue) max by (queue) (rabbitmq_detailed_queue_consumers{queue!~".+\\.dlq"}) == 0
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+
+      # New in Phase 1.5. Extends the existing "Outbox DEAD rows" rule to catch the same failure
+      # class earlier, before any row is old enough to exhaust its retry budget and go DEAD.
+      - uid: luvax-outbox-publish-stalled
+        title: Outbox publish stalled
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations: {}
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              expr: max(luvax_outbox_oldest_pending_age_seconds)
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [300] }
+
+      # New in Phase 1.5. A distinct failure mode from the existing "Circuit breaker open" rule,
+      # which only reflects whether the backend happens to be calling Elasticsearch right then.
+      # noDataState: Alerting, matching "Scrape target down"'s convention - the whole point of
+      # adding "or elasticsearch_cluster_health_up == 0" is so an unreachable cluster fires
+      # instead of silently producing no data.
+      - uid: luvax-elasticsearch-cluster-unhealthy
+        title: Elasticsearch cluster unhealthy
+        condition: C
+        for: 1m
+        noDataState: Alerting
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations: {}
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              expr: >-
+                elasticsearch_cluster_health_status{color="red"} == 1 or
+                elasticsearch_cluster_health_up == 0
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+
+      # New in Phase 1.5. Closes the gap between the jvm-http dashboard's drawn 5xx-ratio panel and
+      # the alert rules, which today alert on nothing from that dashboard. The count guard (refId
+      # Count, >= 20 real 5xx responses in 10m) stops a single error during near-zero traffic from
+      # firing a critical alert; noDataState: OK for the same reason - no traffic at all is the
+      # normal quiet state this guard is meant to tolerate, not a failure.
+      - uid: luvax-backend-5xx-rate-high
+        title: Backend 5xx error rate high
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations: {}
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              expr: >-
+                sum(rate(http_server_requests_seconds_count{job="luvax-backend",status=~"5.."}[5m]))
+                /
+                sum(rate(http_server_requests_seconds_count{job="luvax-backend"}[5m]))
+          - refId: Count
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: Count
+              instant: true
+              range: false
+              expr: >-
+                sum(increase(http_server_requests_seconds_count{job="luvax-backend",status=~"5.."}[10m]))
+          - refId: ThreshRatio
+            datasourceUid: __expr__
+            model:
+              refId: ThreshRatio
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0.05] }
+          - refId: ThreshCount
+            datasourceUid: __expr__
+            model:
+              refId: ThreshCount
+              type: threshold
+              expression: Count
+              conditions:
+                - evaluator: { type: gte, params: [20] }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: math
+              expression: "$ThreshRatio && $ThreshCount"
