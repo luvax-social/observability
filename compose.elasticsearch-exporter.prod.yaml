@@ -1,0 +1,26 @@
+# Coolify "Docker Compose Empty" resource: luvax-elasticsearch-exporter.
+# Split out of the core compose.prod.yaml in Phase 1.5, so an Elasticsearch credential rotation
+# only ever touches this resource. See docs/deployment-handoff.md, "Phase 1.5" runbook.
+#
+# The label below is opt-in scrape discovery for the core resource's Prometheus, which finds this
+# container through the docker-socket-proxy via docker_sd_configs (see
+# prometheus/prometheus.prod.yml, job luvax-exporters). This resource must be attached to the
+# shared "coolify" network (Coolify's "Connect To Predefined Network" toggle) for Prometheus to
+# resolve it by container name, and to reach the Elasticsearch resource by its own container name.
+services:
+  elasticsearch-exporter:
+    image: quay.io/prometheuscommunity/elasticsearch-exporter:v1.11.0
+    restart: unless-stopped
+    mem_limit: 128m
+    cpus: 0.05
+    labels:
+      luvax.prometheus.scrape: "true"
+      luvax.prometheus.job: "elasticsearch"
+      luvax.prometheus.port: "9114"
+    environment:
+      ES_USERNAME: luvax_monitor
+      ES_PASSWORD: ${ES_MONITOR_PASSWORD}
+    command:
+      # --es.ssl-skip-verify is appended only if R0 finds a self-signed certificate.
+      - --es.uri=${ES_URI_SCHEME}://elasticsearch-pzocsus3ji5bb3dqdjh8zqor:9200
+      - --es.indices
