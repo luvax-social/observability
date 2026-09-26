@@ -26,6 +26,9 @@ scrape_configs:
       - files: ["/etc/prometheus/targets/rabbitmq.yml"]
     metrics_path: /metrics/detailed
     params:
+      # queue_consumer_count is what the "RabbitMQ queue stalled" alert (rules.yaml,
+      # luvax-rabbitmq-queue-stalled) joins against queue_coarse_metrics' ready-message count.
+      # Already present before Phase 1.5; carried forward unchanged, no new family needed.
       family: ["queue_coarse_metrics", "queue_consumer_count"]
 
   - job_name: gorse
@@ -33,25 +36,74 @@ scrape_configs:
       - files: ["/etc/prometheus/targets/gorse.yml"]
     metrics_path: /metrics
 
-  - job_name: postgres
-    static_configs:
-      - targets: ["postgres-exporter:9187"]
+  # Phase 1.5: replaces five static jobs (postgres, redis, elasticsearch, node, cadvisor) with one
+  # docker_sd_configs job. Each exporter now lives in its own Coolify resource (see
+  # compose.host.prod.yaml, compose.postgres-exporter.prod.yaml, compose.redis-exporter.prod.yaml,
+  # compose.elasticsearch-exporter.prod.yaml) and opts in with a luvax.prometheus.scrape=true
+  # label; docker-socket-proxy (this resource) is how Prometheus discovers them.
+  #
+  # Addressing: __address__ is built from __meta_docker_container_name (the discovered container's
+  # own name, DNS-resolvable by every container on the shared "coolify" network) plus the
+  # container's own luvax.prometheus.port label - not from the container's IP. A per-resource
+  # Coolify compose container is attached to its own resource's network as well as "coolify"; an
+  # experiment run against this exact proxy/Prometheus version pair showed Prometheus's docker
+  # discovery emits exactly one target, addressed on whichever network the container was created
+  # with first, which is not guaranteed to be "coolify". Addressing by container name instead of
+  # container IP sidesteps that ambiguity entirely: Docker's embedded DNS resolves a container's
+  # name for every container on a network they share, regardless of which network Prometheus's
+  # docker_sd_configs happened to pick for __meta_docker_network_name. There is deliberately no
+  # "keep" relabel rule on __meta_docker_network_name here (see docs/deployment-handoff.md,
+  # "Phase 1.5" runbook, addressing proof): keeping only the "coolify" network is what would make
+  # that ambiguity dangerous, by dropping the container's only emitted target if Prometheus picked
+  # the resource's own network as primary instead.
+  - job_name: luvax-exporters
+    docker_sd_configs:
+      - host: tcp://docker-socket-proxy:2375
+        port: 9100
+        filters:
+          - name: label
+            values: ["luvax.prometheus.scrape=true"]
+    relabel_configs:
+      - source_labels: [__meta_docker_container_label_luvax_prometheus_job]
+        target_label: job
+      - source_labels: [__meta_docker_container_name]
+        regex: "/(.*)"
+        target_label: __tmp_container_name
+      - source_labels: [__meta_docker_container_label_luvax_prometheus_port]
+        target_label: __tmp_port
+      - source_labels: [__tmp_container_name, __tmp_port]
+        separator: ":"
+        target_label: __address__
 
-  - job_name: redis
+  # Phase 1.5: origin TLS certificate expiry, probed against the Coolify proxy itself (not the
+  # public https://<host> edge, which only measures Cloudflare's own certificate). See
+  # docs/deployment-handoff.md, "Phase 1.5" runbook, for the read-only discovery step that finds
+  # the real container name and network for <COOLIFY_PROXY_CONTAINER> below.
+  #
+  # Only two hostnames probed, not four. A real P0.5 discovery run against production
+  # (openssl s_client -connect localhost:443 -servername <host>) found that
+  # www.luvax.online and coolify.luvax.online both present issuer "CN = TRAEFIK DEFAULT CERT",
+  # the same situation as the already-excluded grafana.luvax.online, not a real origin
+  # certificate - an origin probe against either would be permanently meaningless. Only
+  # api.luvax.online and luvax.online (the apex) presented a real Let's Encrypt certificate.
+  - job_name: blackbox-origin-tls
+    metrics_path: /probe
     static_configs:
-      - targets: ["redis-exporter:9121"]
-
-  - job_name: elasticsearch
-    static_configs:
-      - targets: ["elasticsearch-exporter:9114"]
-
-  - job_name: node
-    static_configs:
-      - targets: ["node-exporter:9100"]
-
-  - job_name: cadvisor
-    static_configs:
-      - targets: ["cadvisor:8080"]
+      - targets: ["<COOLIFY_PROXY_CONTAINER>:443"]
+        labels:
+          hostname: api.luvax.online
+          __param_module: tcp_tls_origin_api
+      - targets: ["<COOLIFY_PROXY_CONTAINER>:443"]
+        labels:
+          hostname: luvax.online
+          __param_module: tcp_tls_origin_apex
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [hostname]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
 
   - job_name: otel-collector
     static_configs:

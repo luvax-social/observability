@@ -1,0 +1,34 @@
+# One module per hostname, not one shared module, because blackbox_exporter's tcp prober takes a
+# single static tls_config.server_name per module; it cannot vary the SNI by query parameter the
+# way the target address itself can. Every module below always dials the same place (the Coolify
+# proxy container, set as the Prometheus job's static target - see prometheus/prometheus.prod.yml,
+# job blackbox-origin-tls) and only the presented SNI/server_name differs, so each module proves
+# the origin certificate for exactly one hostname.
+#
+# grafana.luvax.online is deliberately absent: its Cloudflare Tunnel route runs with No TLS Verify
+# on, because Traefik presents its own *.traefik.default certificate for that hostname, not a
+# real origin certificate for grafana.luvax.online. Probing it would always read
+# probe_success=0 for a reason that has nothing to do with certificate expiry. See
+# docs/deployment-handoff.md, "Phase 1.5" runbook, and its topology section.
+#
+# www.luvax.online and coolify.luvax.online are also absent, for the same reason. A real
+# production discovery run (docs/deployment-handoff.md, "Phase 1.5" runbook, P0.5) found both
+# present issuer "CN = TRAEFIK DEFAULT CERT" via
+# `openssl s_client -connect localhost:443 -servername <host>`, not a real origin certificate -
+# only api.luvax.online and the apex luvax.online presented a real Let's Encrypt certificate.
+modules:
+  tcp_tls_origin_api:
+    prober: tcp
+    timeout: 5s
+    tcp:
+      tls: true
+      tls_config:
+        server_name: api.luvax.online
+
+  tcp_tls_origin_apex:
+    prober: tcp
+    timeout: 5s
+    tcp:
+      tls: true
+      tls_config:
+        server_name: luvax.online

@@ -1,0 +1,50 @@
+# Coolify "Docker Compose Empty" resource: luvax-observability-host.
+# Split out of the core compose.prod.yaml in Phase 1.5. node-exporter and cadvisor observe the
+# same thing (the host and its containers), share no credential, and always redeploy together
+# already, so they stay paired in one resource rather than splitting further.
+# See docs/deployment-handoff.md, "Phase 1.5" runbook.
+#
+# Labels below are opt-in scrape discovery for the core resource's Prometheus, which finds
+# containers through the docker-socket-proxy via docker_sd_configs (see
+# prometheus/prometheus.prod.yml, job luvax-exporters). Both services must be attached to the
+# shared "coolify" network (Coolify's "Connect To Predefined Network" toggle) for Prometheus to
+# resolve them by container name.
+services:
+  node-exporter:
+    image: prom/node-exporter:v1.12.1
+    restart: unless-stopped
+    mem_limit: 64m
+    cpus: 0.05
+    pid: host
+    labels:
+      luvax.prometheus.scrape: "true"
+      luvax.prometheus.job: "node"
+      luvax.prometheus.port: "9100"
+    volumes:
+      - /:/host:ro,rslave
+    command:
+      - --path.rootfs=/host
+
+  cadvisor:
+    image: ghcr.io/google/cadvisor:v0.60.6
+    restart: unless-stopped
+    mem_limit: 384m
+    cpus: 0.15
+    privileged: true
+    labels:
+      luvax.prometheus.scrape: "true"
+      luvax.prometheus.job: "cadvisor"
+      luvax.prometheus.port: "8080"
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=30s
+      - --store_container_labels=false
+      - --whitelisted_container_labels=coolify.resourceName
