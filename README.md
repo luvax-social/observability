@@ -109,7 +109,7 @@ Rollback: none, this step is read-only.
 ### R1 - Host files, by script only
 
 ```bash
-REPO_URL=https://github.com/zentech-graduation/Luvax.git BRANCH=main TARGET_DIR=/data/luvax/observability \
+REPO_URL=https://github.com/luvax-social/Luvax.git BRANCH=main TARGET_DIR=/data/luvax/observability \
   bash observability/scripts/sync-to-host.sh
 ```
 
