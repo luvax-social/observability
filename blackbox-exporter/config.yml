@@ -10,6 +10,12 @@
 # real origin certificate for grafana.luvax.online. Probing it would always read
 # probe_success=0 for a reason that has nothing to do with certificate expiry. See
 # docs/deployment-handoff.md, "Phase 1.5" runbook, and its topology section.
+#
+# www.luvax.online and coolify.luvax.online are also absent, for the same reason. A real
+# production discovery run (docs/deployment-handoff.md, "Phase 1.5" runbook, P0.5) found both
+# present issuer "CN = TRAEFIK DEFAULT CERT" via
+# `openssl s_client -connect localhost:443 -servername <host>`, not a real origin certificate -
+# only api.luvax.online and the apex luvax.online presented a real Let's Encrypt certificate.
 modules:
   tcp_tls_origin_api:
     prober: tcp
@@ -26,19 +32,3 @@ modules:
       tls: true
       tls_config:
         server_name: luvax.online
-
-  tcp_tls_origin_www:
-    prober: tcp
-    timeout: 5s
-    tcp:
-      tls: true
-      tls_config:
-        server_name: www.luvax.online
-
-  tcp_tls_origin_coolify:
-    prober: tcp
-    timeout: 5s
-    tcp:
-      tls: true
-      tls_config:
-        server_name: coolify.luvax.online
