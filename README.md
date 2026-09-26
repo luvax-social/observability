@@ -29,6 +29,11 @@ plain `docker compose -f observability/compose.local.yaml up -d` starts nothing.
 
 1. Copy `.env.example` to `.env` and fill in the passwords.
 2. Start the backend's own infrastructure first: `cd backend && docker compose up -d`.
+   The compose file pins its project name to `backend`, so this works from any invocation
+   directory without `-p backend`, and matches the container names this stack expects.
+   A `postgres-monitoring-role` one-shot service runs on every `up`, including against a
+   Postgres volume that already existed before this service was added, so the `postgresql`
+   dashboard's `pg_up` and its other panels populate without a manual grant.
 3. Start this stack: `cd .. && docker compose -f observability/compose.local.yaml --profile observability up -d`.
 4. Start the backend with tracing on: set `OTLP_EXPORT_ENABLED=true` in `backend/.env`, then run the
    backend as usual (`start-app.bat`, or `cd backend && ./mvnw spring-boot:run`).
@@ -81,6 +86,9 @@ docker exec $ES curl -s -o /dev/null -w '%{http_code} %{scheme}\n' -k https://lo
 docker inspect $(docker ps -q --filter label=coolify.resourceName=luvax-prod) --format '{{json .Config.Labels}}' | jq 'with_entries(select(.key|startswith("coolify")))'
 docker inspect $PG --format '{{json .Config.Labels}}' | jq 'with_entries(select(.key|startswith("coolify")))'
 docker ps --filter name=cloudflared --format '{{.Names}} {{.Image}}'
+systemctl status cloudflared --no-pager
+systemctl cat cloudflared | grep -E '^ExecStart'
+sudo awk '/^ingress:/{f=1} f' /etc/cloudflared/config.yml
 ```
 
 Record the CPU flags (expect `sse4_2` only), the logging driver (must be `json-file`; anything else
@@ -88,14 +96,20 @@ blocks the container-log design), the Postgres image and major version (update t
 whether the Postgres user is a superuser, the configuration-file settings, the application database
 name, the RabbitMQ version and plugins, the Elasticsearch scheme, the backend's `coolify.resourceName`
 (must be `luvax-prod`, or set `BACKEND_COOLIFY_RESOURCE_NAME` to whatever it is instead), and how
-cloudflared runs. Save these to `.workspace/reports/p1/r0-facts.md`.
+cloudflared runs.
+The last three commands decide R8's management mode.
+`systemctl status` confirms the unit is `luvax-tunnel` and active.
+The `ExecStart` line shows whether the process runs with `--config /etc/cloudflared/config.yml` (locally managed) or with `tunnel run --token ...` and no `--config` flag (remotely managed, dashboard-configured).
+The `ingress:` block, if `config.yml` has one, is the locally managed case; a `config.yml` with no `ingress:` key, or a missing file, means the tunnel's routing lives in the Zero Trust dashboard instead.
+Redact the `credentials-file` path's contents and any inline `tunnel` secret or token before saving; the path and the ingress rules themselves are not secrets.
+Save all of this to `.workspace/reports/p1/r0-facts.md`.
 
 Rollback: none, this step is read-only.
 
 ### R1 - Host files, by script only
 
 ```bash
-REPO_URL=https://github.com/zentech-graduation/Luvax.git BRANCH=main TARGET_DIR=/data/luvax/observability \
+REPO_URL=https://github.com/luvax-social/Luvax.git BRANCH=main TARGET_DIR=/data/luvax/observability \
   bash observability/scripts/sync-to-host.sh
 ```
 
@@ -238,16 +252,57 @@ Rollback: delete the Access application.
 
 ### R8 - Cloudflare Tunnel public hostname
 
-Zero Trust, Networks, Tunnels, `luvax-tunnel`, Public Hostname, Add: subdomain `grafana`, domain
-`luvax.online`, service identical to the existing backend hostname's service (read it on the same
-page; with Coolify it is the proxy, for example `http://localhost:80` or `http://coolify-proxy:80`).
+Every public hostname on this tunnel routes through the Coolify proxy on the same host.
+`api.luvax.online` only works with service `https://localhost:443`, HTTP Host Header equal to the
+public hostname, TLS Origin Server Name equal to the public hostname, and HTTP/2 origin off.
+Routing to `http://localhost:80` makes Coolify's own HTTP-to-HTTPS redirect loop back into the
+tunnel, because the tunnel terminates TLS and Coolify's redirect sends the browser straight back to
+the plain-HTTP hostname the tunnel exposes.
+Copying only the `service` field from `api.luvax.online`, as an earlier revision of this step did,
+drops the Host Header and Origin Server Name and produces either that loop or a TLS name mismatch,
+because the proxy's TLS listener uses SNI/Host Header to pick which resource's certificate to serve.
+The rule for `grafana.luvax.online` must mirror `api.luvax.online`'s origin settings with its own
+hostname in Host Header and Origin Server Name, and it must sit before the catch-all rule, the same
+place every hostname rule on this tunnel sits.
+R0's `ExecStart` and `config.yml` checks decide which of the two procedures below applies.
 
-Verification: an unauthenticated request must redirect to Access, never return Grafana's own login
-page. `curl -sI https://grafana.luvax.online/login` returns `302` with `location` on
-`*.cloudflareaccess.com`; a private browser window shows the Access login, and Grafana's own login
-appears only after the PIN.
+**Locally managed** (`config.yml` has an `ingress:` block and `ExecStart` passes `--config`):
 
-Rollback: delete the public hostname and its DNS record.
+1. Back up the file: `sudo cp /etc/cloudflared/config.yml /etc/cloudflared/config.yml.bak.$(date +%s)`.
+2. Add this block to the `ingress` list, immediately above the existing catch-all (`service: http_status:404` or similar) entry, keeping `api.luvax.online`'s entry as the pattern:
+
+   ```yaml
+   - hostname: grafana.luvax.online
+     service: https://localhost:443
+     originRequest:
+       httpHostHeader: grafana.luvax.online
+       originServerName: grafana.luvax.online
+       http2Origin: false
+   ```
+
+3. Validate before restarting: `cloudflared tunnel ingress validate`.
+4. Confirm the new hostname resolves to this rule and not the catch-all: `cloudflared tunnel ingress rule https://grafana.luvax.online`.
+5. If `dig grafana.luvax.online CNAME +short` prints nothing, add the DNS route before restarting: `cloudflared tunnel route dns luvax-tunnel grafana.luvax.online`.
+6. Apply: `sudo systemctl restart cloudflared`.
+
+Rollback: `sudo cp /etc/cloudflared/config.yml.bak.<timestamp> /etc/cloudflared/config.yml && sudo systemctl restart cloudflared`; delete the DNS route with `cloudflared tunnel route dns` reversed via the Zero Trust dashboard if step 5 created one.
+
+**Remotely managed** (`ExecStart` passes `tunnel run --token ...` and `config.yml` has no `ingress:` block, or does not exist):
+
+1. Zero Trust, Networks, Tunnels, `luvax-tunnel`, Public Hostname, Add: subdomain `grafana`, domain `luvax.online`, service `https://localhost:443`.
+2. Under "Additional application settings", TLS: set Origin Server Name to `grafana.luvax.online`.
+3. Under "Additional application settings", HTTP Settings: set HTTP Host Header to `grafana.luvax.online` and disable HTTP/2 connections to origin.
+4. Save. The dashboard always evaluates added hostnames before the catch-all rule, so no manual reordering is needed.
+5. If the hostname was never routed before, the dashboard creates its DNS record automatically on save; confirm with `dig grafana.luvax.online CNAME +short`.
+
+Rollback: delete the public hostname entry from the dashboard, which also removes the DNS record it created.
+
+Verification, both modes: an unauthenticated request must redirect to Access, never return Grafana's
+own login page and never loop.
+`curl -sIL --max-redirs 5 https://grafana.luvax.online` must terminate on a `*.cloudflareaccess.com`
+response rather than exhausting its redirect budget, and every hop must be a clean `30x` with no TLS
+handshake error.
+A private browser window shows the Access login, and Grafana's own login appears only after the PIN.
 
 ### R9 - Discord webhook and alert test
 
