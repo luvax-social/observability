@@ -1,0 +1,29 @@
+# Coolify "Docker Compose Empty" resource: luvax-postgres-exporter.
+# Split out of the core compose.prod.yaml in Phase 1.5, so a Postgres credential rotation only
+# ever touches this resource. See docs/deployment-handoff.md, "Phase 1.5" runbook.
+#
+# The label below is opt-in scrape discovery for the core resource's Prometheus, which finds this
+# container through the docker-socket-proxy via docker_sd_configs (see
+# prometheus/prometheus.prod.yml, job luvax-exporters). This resource must be attached to the
+# shared "coolify" network (Coolify's "Connect To Predefined Network" toggle) for Prometheus to
+# resolve it by container name, and to reach the Postgres resource by its own container name.
+services:
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
+    restart: unless-stopped
+    mem_limit: 128m
+    cpus: 0.05
+    labels:
+      luvax.prometheus.scrape: "true"
+      luvax.prometheus.job: "postgres"
+      luvax.prometheus.port: "9187"
+    environment:
+      DATA_SOURCE_URI: "${PG_STATS_HOST}:5432/${PG_STATS_DATABASE}?sslmode=disable"
+      DATA_SOURCE_USER: luvax_monitor
+      DATA_SOURCE_PASS: ${POSTGRES_MONITOR_PASSWORD}
+    command:
+      - --collector.stat_statements
+      - --collector.stat_statements.include_query
+      - --collector.stat_statements.query_length=500
+      - --collector.stat_statements.limit=200
+      - --collector.long_running_transactions
