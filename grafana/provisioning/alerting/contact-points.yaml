@@ -13,4 +13,4 @@ contactPoints:
             {{ range .Alerts }}{{ range .Labels.SortedPairs }}{{ .Name }}={{ .Value }} {{ end }}
             value: {{ .ValueString }}
             {{ end }}
-            https://grafana.luvax.online/dashboards/f/luvax
+            https://grafana.luvax.online/alerting/list
