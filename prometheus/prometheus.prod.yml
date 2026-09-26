@@ -89,11 +89,11 @@ scrape_configs:
   - job_name: blackbox-origin-tls
     metrics_path: /probe
     static_configs:
-      - targets: ["<COOLIFY_PROXY_CONTAINER>:443"]
+      - targets: ["coolify-proxy:443"]
         labels:
           hostname: api.luvax.online
           __param_module: tcp_tls_origin_api
-      - targets: ["<COOLIFY_PROXY_CONTAINER>:443"]
+      - targets: ["coolify-proxy:443"]
         labels:
           hostname: luvax.online
           __param_module: tcp_tls_origin_apex
