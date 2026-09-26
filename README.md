@@ -5,16 +5,56 @@ Phase 1 scope is monitoring only.
 
 ## Components
 
+As of Phase 1.5, this stack is five Coolify resources, not one. Splitting the exporters out lets
+each be redeployed or have its credential rotated independently, without restarting Prometheus or
+Grafana.
+
+| Resource | Services | Role |
+|---|---|---|
+| `luvax-observability` (core) | `clickhouse`, `prometheus`, `grafana`, `otel-collector`, `docker-socket-proxy`, `blackbox-exporter` | Traces/logs/metrics storage, dashboards, alerting, exporter discovery, origin TLS probing |
+| `luvax-observability-host` | `node-exporter`, `cadvisor` | Host and container metrics; paired because neither ever redeploys independently of the other |
+| `luvax-postgres-exporter` | `postgres-exporter` | Postgres metrics, its own credential |
+| `luvax-redis-exporter` | `redis-exporter` | Redis metrics, its own credential |
+| `luvax-elasticsearch-exporter` | `elasticsearch-exporter` | Elasticsearch metrics, its own credential |
+
+Each of the four datastore/host exporters opts into Prometheus's discovery with a
+`luvax.prometheus.scrape=true` label (see `prometheus/prometheus.prod.yml`, job
+`luvax-exporters`); Prometheus finds them through `docker-socket-proxy`'s `docker_sd_configs`
+endpoint, addressed by container name, not container IP (see `docs/deployment-handoff.md`,
+"Phase 1.5" runbook, for why).
+
 | Service | Role |
 |---|---|
 | `otel-collector` | Receives OTLP traces/logs from the backend and container log files, exports both to ClickHouse |
 | `clickhouse` | Stores `otel.otel_logs` and `otel.otel_traces` (14 and 7 day TTL) |
-| `prometheus` | Scrapes the backend's management port, RabbitMQ, Gorse, and every exporter below; 30 day retention |
-| `grafana` | Ten provisioned dashboards, Discord-backed alerting, the only public component |
-| `docker-socket-proxy` | Read-only, `CONTAINERS`/`EVENTS`/`PING`/`VERSION` only; the collector's only path to the Docker API |
+| `prometheus` | Scrapes the backend's management port, RabbitMQ, Gorse, every exporter above, and the origin TLS probe below; 30 day retention |
+| `grafana` | Ten provisioned dashboards across five folders, Discord-backed alerting, the only public component |
+| `docker-socket-proxy` | Read-only, `CONTAINERS`/`EVENTS`/`PING`/`VERSION`/`NETWORKS` only; the collector's and Prometheus's only path to the Docker API |
+| `blackbox-exporter` | Probes the Coolify proxy's origin TLS certificate per hostname (new in Phase 1.5) |
 | `postgres-exporter`, `redis-exporter`, `elasticsearch-exporter`, `node-exporter`, `cadvisor` | Infrastructure metrics for the dashboards above |
 
-Total budget: 7.3 GB memory, 2.0 CPU across every service in this stack.
+Total budget: 7520 MiB (~7.34 GB) memory, 2.02 CPU across all 11 containers in all five resources.
+No existing exporter's `mem_limit`/`cpus` changed; only the new `blackbox-exporter` (32m/0.02) adds
+to the prior 7.3 GB / 2.0 CPU total.
+
+## Dashboard folders
+
+Ten dashboards, grouped by category into five folders, each an explicit Grafana provisioning
+provider with its own `folderUid` (`grafana/provisioning/dashboards/dashboards.yaml`):
+
+| Folder | Dashboards |
+|---|---|
+| Infrastructure | Host & Containers |
+| Backing Services | PostgreSQL, Redis, Elasticsearch, Gorse |
+| Messaging | RabbitMQ, Outbox & Inbox |
+| Application | JVM & HTTP |
+| Explore | Logs Explorer, Trace Explorer |
+
+A sixth folder, **Business**, is reserved for Phase 2 (platform statistics, admin actions, user
+events) and is deliberately not created yet - there is nothing to put in it until that phase ships.
+
+Alert rules live in their own folder, **Alerting**, separate from every dashboard folder (see
+`grafana/provisioning/alerting/rules.yaml`).
 
 **ClickHouse is pinned to `26.3.33.24` (the 26.3 LTS line) and must not move past 26.5.**
 From ClickHouse 26.6 the official build's default target is x86-64-v3 (AVX2); the production host's
@@ -55,8 +95,15 @@ log discovery reads the backend compose project's own container names
   `logs-explorer` dashboard, filtered by service, level, free text or trace id.
 - Metrics: Prometheus, 30 day / 10 GB retention. Eight dashboards cover the JVM and HTTP layer, the
   outbox/inbox, RabbitMQ, PostgreSQL, Redis, Elasticsearch, Gorse, and the host and containers.
-- Alerts: six baseline rules (DLQ not empty, outbox DEAD rows, an open circuit breaker, a container
-  restart loop, disk above 85 percent, a scrape target down), delivered to a Discord channel.
+- Alerts: eleven rules (the six baseline rules - DLQ not empty, outbox DEAD rows, an open circuit
+  breaker, a container restart loop, disk above 85 percent, a scrape target down - plus five added
+  in Phase 1.5: origin TLS certificate expiring, a stalled RabbitMQ queue, a stalled outbox
+  publisher, an unhealthy Elasticsearch cluster, and a high backend 5xx rate), delivered to a
+  Discord channel. Critical-severity alerts repeat hourly; warning-severity alerts keep the
+  original 4-hour repeat interval. **Every Phase 1.5 threshold is provisional**, to be revisited
+  after two weeks of production data: the RabbitMQ stall rule's 5-minute pending window, the
+  outbox-stall 300-second threshold, and the backend 5xx rule's 5 percent ratio and 20-error count
+  guard.
 
 Traces and logs are best effort: a missed export is not replayed, and both stores are disposable and
 rebuildable from nothing but live traffic. Neither is a source of truth.
