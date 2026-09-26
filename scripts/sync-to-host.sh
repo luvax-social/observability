@@ -5,7 +5,7 @@
 # script and nothing else, so the host tree, compose.prod.yaml and this script never drift apart.
 set -euo pipefail
 
-REPO_URL=${REPO_URL:-https://github.com/zentech-graduation/Luvax.git}
+REPO_URL=${REPO_URL:-https://github.com/luvax-social/Luvax.git}
 BRANCH=${BRANCH:-main}
 TARGET_DIR=${TARGET_DIR:-/data/luvax/observability}
 TMP_DIR=$(mktemp -d)
