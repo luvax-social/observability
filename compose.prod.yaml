@@ -1,7 +1,15 @@
-# Coolify "Docker Compose Empty" resource. Every bind mount is an absolute host path under
-# /data/luvax/observability, which R1 of the production runbook populates by running
-# scripts/sync-to-host.sh; there is no repo checkout on the host for Coolify to resolve a
-# relative path against.
+# Coolify "Docker Compose Empty" resource: the core luvax-observability resource.
+# Every bind mount is an absolute host path under /data/luvax/observability, which R1 of the
+# production runbook populates by running scripts/sync-to-host.sh; there is no repo checkout on
+# the host for Coolify to resolve a relative path against.
+#
+# As of the Phase 1.5 resource split, this file holds only the core services: ClickHouse,
+# Prometheus, Grafana, the OTel Collector, the Docker socket proxy, and the blackbox exporter.
+# The five exporters that used to live here (postgres-exporter, redis-exporter,
+# elasticsearch-exporter, node-exporter, cadvisor) now live in their own Coolify resources, each
+# from its own compose file in this repository (compose.host.prod.yaml,
+# compose.postgres-exporter.prod.yaml, compose.redis-exporter.prod.yaml,
+# compose.elasticsearch-exporter.prod.yaml). See docs/deployment-handoff.md, "Phase 1.5" runbook.
 services:
   clickhouse:
     # Pinned to the 26.3 LTS line. From 26.6 the official build targets x86-64-v3 (AVX2); the
@@ -107,77 +115,26 @@ services:
       EVENTS: 1
       PING: 1
       VERSION: 1
+      # New in Phase 1.5: Prometheus's docker_sd_configs job (see prometheus/prometheus.prod.yml)
+      # calls the Docker networks API to compute __meta_docker_network_* labels for every
+      # discovered container. Without this, discovery fails with an HTTP 403 from the proxy.
+      # Verified locally (section 2 of the P1.5-A plan, and again in this task's own rehearsal).
+      NETWORKS: 1
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
 
-  postgres-exporter:
-    image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
+  blackbox-exporter:
+    # New in Phase 1.5: probes the Coolify proxy's origin TLS certificate per hostname. See
+    # docs/deployment-handoff.md, "Phase 1.5" runbook and section 9, for the Cloudflare Access
+    # ACME-bypass gotcha this alert is meant to catch.
+    image: prom/blackbox-exporter:v0.27.0
     restart: unless-stopped
-    mem_limit: 128m
-    cpus: 0.05
-    environment:
-      DATA_SOURCE_URI: "${PG_STATS_HOST}:5432/${PG_STATS_DATABASE}?sslmode=disable"
-      DATA_SOURCE_USER: luvax_monitor
-      DATA_SOURCE_PASS: ${POSTGRES_MONITOR_PASSWORD}
-    command:
-      - --collector.stat_statements
-      - --collector.stat_statements.include_query
-      - --collector.stat_statements.query_length=500
-      - --collector.stat_statements.limit=200
-      - --collector.long_running_transactions
-
-  redis-exporter:
-    image: oliver006/redis_exporter:v1.92.0
-    restart: unless-stopped
-    mem_limit: 64m
-    cpus: 0.05
-    environment:
-      REDIS_ADDR: redis://ijrhuhxwedr7y0pmjhputc5f:6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
-
-  elasticsearch-exporter:
-    image: quay.io/prometheuscommunity/elasticsearch-exporter:v1.11.0
-    restart: unless-stopped
-    mem_limit: 128m
-    cpus: 0.05
-    environment:
-      ES_USERNAME: luvax_monitor
-      ES_PASSWORD: ${ES_MONITOR_PASSWORD}
-    command:
-      # --es.ssl-skip-verify is appended only if R0 finds a self-signed certificate.
-      - --es.uri=${ES_URI_SCHEME}://elasticsearch-pzocsus3ji5bb3dqdjh8zqor:9200
-      - --es.indices
-
-  node-exporter:
-    image: prom/node-exporter:v1.12.1
-    restart: unless-stopped
-    mem_limit: 64m
-    cpus: 0.05
-    pid: host
+    mem_limit: 32m
+    cpus: 0.02
     volumes:
-      - /:/host:ro,rslave
+      - /data/luvax/observability/blackbox-exporter/config.yml:/etc/blackbox_exporter/config.yml:ro
     command:
-      - --path.rootfs=/host
-
-  cadvisor:
-    image: ghcr.io/google/cadvisor:v0.60.6
-    restart: unless-stopped
-    mem_limit: 384m
-    cpus: 0.15
-    privileged: true
-    devices:
-      - /dev/kmsg
-    volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:ro
-      - /sys:/sys:ro
-      - /var/lib/docker:/var/lib/docker:ro
-      - /dev/disk:/dev/disk:ro
-    command:
-      - --docker_only=true
-      - --housekeeping_interval=30s
-      - --store_container_labels=false
-      - --whitelisted_container_labels=coolify.resourceName
+      - --config.file=/etc/blackbox_exporter/config.yml
 
 volumes:
   clickhouse-data:
