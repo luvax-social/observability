@@ -295,8 +295,10 @@ Gate before P8/verification: folder deleted, six folders remain (the five dashbo
 1. Redeploy the `luvax-observability` core resource from `$ROLLBACK_SHA` (the commit recorded in P1).
    This restores the old compose file (ten services in one resource), the old Prometheus static targets, the old flat dashboard provisioning, and the old alert-rule folder.
 2. Delete the four new resources created in P3 (Stop, then Delete with volumes).
+3. Also remove `blackbox-exporter-$OBS` if it is still running: it is not part of the old compose file either, and step 1's redeploy leaves it orphaned by the same mechanism documented in P5.
+4. The five folders created by the new dashboard and alert-rule provisioning (`Infrastructure`, `Backing Services`, `Messaging`, `Application`, `Alerting` - and `Explore`, six in total) are **not** removed by step 1's redeploy; they become empty orphans, the same way the old `Luvax` folder did going forward. If a full rollback to the pre-migration state is wanted, delete each with the same three-step sequence as P7 (confirm empty, then `DELETE /api/folders/<uid>`), once dashboards have re-homed back into `Luvax`.
 
-Verification: `docker exec prometheus-$OBS wget -qO- localhost:9090/api/v1/targets` shows the old static job names again, all `up=1`; the Grafana folder list shows the single "Luvax" folder again with all ten dashboards inside it.
+Verification: `docker exec prometheus-$OBS wget -qO- localhost:9090/api/v1/targets` shows the old static job names again, all `up=1`; the Grafana folder list shows the single "Luvax" folder again with all ten dashboards inside it (proven in local rehearsal, section 8).
 
 ## 7. Phase 1.5 post-deployment verification
 
