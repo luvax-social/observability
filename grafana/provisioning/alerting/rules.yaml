@@ -308,14 +308,33 @@ groups:
 
       # New in Phase 1.5. A distinct failure mode from the existing "Circuit breaker open" rule,
       # which only reflects whether the backend happens to be calling Elasticsearch right then.
-      # noDataState: Alerting, matching "Scrape target down"'s convention - the whole point of
-      # adding "or elasticsearch_cluster_health_up == 0" is so an unreachable cluster fires
-      # instead of silently producing no data.
+      #
+      # Rehearsal correction, round 1: the plan's original query used
+      # "elasticsearch_cluster_health_up", which does not exist on elasticsearch-exporter v1.11.0
+      # (confirmed by reading its /metrics output directly).
+      #
+      # Rehearsal correction, round 2: the round-1 fix substituted "elasticsearch_clusterinfo_up",
+      # the exporter's actual reachability gauge - but stopping the real Elasticsearch container
+      # and reading the exporter's own logs showed its cluster-info collector fails on every poll
+      # ("dial tcp: ... no such host") while elasticsearch_clusterinfo_up stayed stuck at 1: this
+      # gauge caches its last successful value on failure rather than dropping to 0, so it cannot
+      # be trusted as a real-time reachability signal on this exporter version.
+      #
+      # Final design: a single query, self-referential on the same series this rule already reads.
+      # elasticsearch_cluster_health_status{color="red"} == 1 is present (value 1) only when truly
+      # red. absent(elasticsearch_cluster_health_status{color="red"}) is present (value 1) only
+      # when that specific series is missing entirely - which happens when the exporter cannot
+      # reach the cluster at all (a healthy, reachable cluster always emits the red-color series,
+      # just with value 0, so absent() is correctly empty in the healthy case). Verified directly:
+      # real Elasticsearch stopped, elasticsearch_cluster_health_status disappeared entirely from
+      # the exporter's /metrics within one scrape, and this query correctly went from empty to "1".
+      # noDataState: OK - the query is empty exactly in the healthy case (by design, both branches
+      # filter out anything that isn't 1), so "no data" here means healthy, not unreachable.
       - uid: luvax-elasticsearch-cluster-unhealthy
         title: Elasticsearch cluster unhealthy
         condition: C
         for: 1m
-        noDataState: Alerting
+        noDataState: OK
         execErrState: Error
         labels:
           severity: critical
@@ -330,7 +349,7 @@ groups:
               range: false
               expr: >-
                 elasticsearch_cluster_health_status{color="red"} == 1 or
-                elasticsearch_cluster_health_up == 0
+                absent(elasticsearch_cluster_health_status{color="red"})
           - refId: C
             datasourceUid: __expr__
             model:
