@@ -1,12 +1,74 @@
 apiVersion: 1
+# Phase 1.5: replaces the single flat "Luvax" provider with five providers grouped by category
+# (infrastructure, backing services, messaging, application, explore), per the folder table in
+# docs/deployment-handoff.md's "Phase 1.5" runbook. Each folderUid is explicit, so folder identity
+# is deterministic rather than Grafana-auto-generated - verified in the P1.5-A rehearsal to
+# re-home an existing dashboard in place under its own uid, with no duplicate. Every dashboard's
+# own uid field is unchanged; only its path on disk and which provider's path picks it up moved.
+#
+# The old flat "Luvax" folder is not provisioned here and becomes an empty orphan once every
+# dashboard has moved out of it on first deploy; deleting it is an explicit, one-time runbook step
+# (see docs/deployment-handoff.md), not automatic.
+#
+# A sixth folder, "Business" (platform statistics, admin actions, user events), is reserved for
+# Phase 2 and deliberately not created here - see README.md.
 providers:
-  - name: Luvax
+  - name: infrastructure
     orgId: 1
-    folder: Luvax
+    folder: Infrastructure
+    folderUid: infrastructure
     type: file
     disableDeletion: true
     updateIntervalSeconds: 30
     allowUiUpdates: false
     options:
-      path: /etc/grafana/dashboards
+      path: /etc/grafana/dashboards/infrastructure
+      foldersFromFilesStructure: false
+
+  - name: backing-services
+    orgId: 1
+    folder: Backing Services
+    folderUid: backing-services
+    type: file
+    disableDeletion: true
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/dashboards/backing-services
+      foldersFromFilesStructure: false
+
+  - name: messaging
+    orgId: 1
+    folder: Messaging
+    folderUid: messaging
+    type: file
+    disableDeletion: true
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/dashboards/messaging
+      foldersFromFilesStructure: false
+
+  - name: application
+    orgId: 1
+    folder: Application
+    folderUid: application
+    type: file
+    disableDeletion: true
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/dashboards/application
+      foldersFromFilesStructure: false
+
+  - name: explore
+    orgId: 1
+    folder: Explore
+    folderUid: explore
+    type: file
+    disableDeletion: true
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/dashboards/explore
       foldersFromFilesStructure: false
