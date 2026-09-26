@@ -78,8 +78,14 @@ scrape_configs:
   # Phase 1.5: origin TLS certificate expiry, probed against the Coolify proxy itself (not the
   # public https://<host> edge, which only measures Cloudflare's own certificate). See
   # docs/deployment-handoff.md, "Phase 1.5" runbook, for the read-only discovery step that finds
-  # the real container name and network for <COOLIFY_PROXY_CONTAINER> below, and for why
-  # grafana.luvax.online is excluded.
+  # the real container name and network for <COOLIFY_PROXY_CONTAINER> below.
+  #
+  # Only two hostnames probed, not four. A real P0.5 discovery run against production
+  # (openssl s_client -connect localhost:443 -servername <host>) found that
+  # www.luvax.online and coolify.luvax.online both present issuer "CN = TRAEFIK DEFAULT CERT",
+  # the same situation as the already-excluded grafana.luvax.online, not a real origin
+  # certificate - an origin probe against either would be permanently meaningless. Only
+  # api.luvax.online and luvax.online (the apex) presented a real Let's Encrypt certificate.
   - job_name: blackbox-origin-tls
     metrics_path: /probe
     static_configs:
@@ -91,14 +97,6 @@ scrape_configs:
         labels:
           hostname: luvax.online
           __param_module: tcp_tls_origin_apex
-      - targets: ["<COOLIFY_PROXY_CONTAINER>:443"]
-        labels:
-          hostname: www.luvax.online
-          __param_module: tcp_tls_origin_www
-      - targets: ["<COOLIFY_PROXY_CONTAINER>:443"]
-        labels:
-          hostname: coolify.luvax.online
-          __param_module: tcp_tls_origin_coolify
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target

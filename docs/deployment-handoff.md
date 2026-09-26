@@ -85,8 +85,9 @@ These are production facts, not assumptions; they were discovered deploying `gra
   Origin changes for `grafana.luvax.online` are made in the Zero Trust dashboard only; editing `config.yml` for that hostname has no effect until the dashboard-managed route is removed.
 - **No TLS Verify is On for `grafana.luvax.online`**, because Traefik (the Coolify proxy) presents its own internal default certificate (`*.traefik.default`) for that hostname, not a real origin certificate matching `grafana.luvax.online`.
   Leaving No TLS Verify Off produces a 502 with a certificate-name mismatch, because `cloudflared` refuses to validate a certificate that does not match the hostname it requested.
-- **Other hostnames** (`api.luvax.online`, `www.luvax.online`, `coolify.luvax.online`, and the apex `luvax.online`) remain file-managed (`config.yml`), with No TLS Verify Off, because Traefik presents a real origin certificate for each of them.
-  This is exactly why the Phase 1.5 TLS-expiry probe (section 6) excludes `grafana.luvax.online` and only targets these four.
+- **`api.luvax.online` and the apex `luvax.online`** remain file-managed (`config.yml`), with No TLS Verify Off, and a real P0.5 discovery run confirmed both present a real Let's Encrypt certificate (issuer `Let's Encrypt`, expiring Dec 20 2026 at the time of that run). This is exactly why the Phase 1.5 TLS-expiry probe (section 6) targets these two.
+- **`www.luvax.online` and `coolify.luvax.online` also present `CN = TRAEFIK DEFAULT CERT`**, the same shape as `grafana.luvax.online`, found by the same P0.5 run - not an assumption carried over from the original runbook, which incorrectly assumed all four non-`grafana` hostnames had real certificates. Both are excluded from the TLS-expiry probe for the same reason `grafana.luvax.online` is.
+  **This is flagged, not silently resolved**: if either hostname is a real traffic path with No TLS Verify Off (as section 3's Coolify conventions describe for "other hostnames" generally), a client-validated connection to it should be failing with a certificate-name mismatch right now, the same failure mode described above for `grafana.luvax.online` before its No TLS Verify was turned on. Before relying on this document's silence here, check with a plain `curl -sIL https://www.luvax.online` and `curl -sIL https://coolify.luvax.online` whether either is actually broken, or whether neither carries real traffic and the mismatch has simply never been noticed. Fixing a real Cloudflare Tunnel misconfiguration is outside this repository's change and outside what a chat assistant without Cloudflare access can safely diagnose further - if either hostname turns out to be broken, that is a separate, dedicated fix, not part of this observability change.
 
 ## 4. Phase 1, deployed: history
 
@@ -151,6 +152,8 @@ Gate before P1: `$PROXY` is a real, running container name, attached to `coolify
 
 Who: the user runs; you read the output.
 
+**Already run once**, against production, with the results below. `blackbox-exporter/config.yml` and the `blackbox-origin-tls` job in `prometheus/prometheus.prod.yml` already reflect this outcome (two modules/targets, not four). Re-run before the real cutover only to catch drift since that run - a certificate can be renewed or a hostname's routing can change between this document being written and the day of the cutover.
+
 ```bash
 for h in api.luvax.online luvax.online www.luvax.online coolify.luvax.online; do
   echo "== $h =="
@@ -158,10 +161,18 @@ for h in api.luvax.online luvax.online www.luvax.online coolify.luvax.online; do
 done
 ```
 
-Expected: a real issuer (Let's Encrypt or similar) and a future expiry date for all four.
-**If any hostname shows Traefik's own default certificate** (a self-signed or internal issuer, not Let's Encrypt) instead of a real origin certificate, remove that hostname from the blackbox-exporter's module list (see step P3) and note it here - it means that hostname has the same "No TLS Verify" shape as `grafana.luvax.online` and an origin probe would be permanently meaningless for it, exactly as documented for `grafana.luvax.online` in section 3.
+Result of the run this document was written from:
 
-Gate before P1: all four hostnames' issuer and expiry are recorded (or excluded, with a note).
+| Hostname | Issuer | Expiry | In the probe? |
+|---|---|---|---|
+| `api.luvax.online` | Let's Encrypt | Dec 20 2026 | Yes |
+| `luvax.online` (apex) | Let's Encrypt | Dec 20 2026 | Yes |
+| `www.luvax.online` | `CN = TRAEFIK DEFAULT CERT` | Sep 26 2027 | No - see section 3's flagged open question |
+| `coolify.luvax.online` | `CN = TRAEFIK DEFAULT CERT` | Sep 26 2027 | No - see section 3's flagged open question |
+
+**If a re-run before the real cutover shows different results** (for example, `www.luvax.online` now presents a real Let's Encrypt certificate), update `blackbox-exporter/config.yml` and the `blackbox-origin-tls` job to match - add or remove a module/target pair, do not silently leave this document's table stale.
+
+Gate before P1: all four hostnames' issuer and expiry are recorded (or excluded, with a note) for the run closest to the actual cutover.
 
 ### P1 - Record the rollback point (read-only)
 
@@ -185,7 +196,7 @@ Verification: `find /data/luvax/observability -type d -empty` prints nothing (se
 Confirm the five compose files exist: `ls /data/luvax/observability/compose*.yaml` shows `compose.prod.yaml`, `compose.host.prod.yaml`, `compose.postgres-exporter.prod.yaml`, `compose.redis-exporter.prod.yaml`, `compose.elasticsearch-exporter.prod.yaml`.
 
 Before continuing, edit `/data/luvax/observability/prometheus/prometheus.prod.yml` on the host: replace every `<COOLIFY_PROXY_CONTAINER>` placeholder with `$PROXY` from P0.
-If P0.5 excluded any hostname, also remove that hostname's two lines (the `static_configs` target block and, in `blackbox-exporter/config.yml`, its module) from the synced files.
+`www.luvax.online` and `coolify.luvax.online` are already excluded from the synced files, per P0.5's run; only touch the target/module lists again if a re-run of P0.5 closer to the cutover shows different results than its recorded table.
 
 Rollback: `sudo rm -rf /data/luvax/observability` (the old resource is still running and unaffected).
 
