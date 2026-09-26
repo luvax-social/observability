@@ -98,9 +98,9 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
       "targets": [
-        { "refId": "A", "expr": "rate(otelcol_exporter_sent_log_records_total[$__rate_interval])", "legendFormat": "logs sent/s" },
-        { "refId": "B", "expr": "rate(otelcol_exporter_sent_spans_total[$__rate_interval])", "legendFormat": "spans sent/s" },
-        { "refId": "C", "expr": "rate(otelcol_exporter_send_failed_log_records_total[$__rate_interval])", "legendFormat": "logs failed/s" }
+        { "refId": "A", "expr": "rate(otelcol_exporter_sent_log_records[$__rate_interval])", "legendFormat": "logs sent/s" },
+        { "refId": "B", "expr": "rate(otelcol_exporter_sent_spans[$__rate_interval])", "legendFormat": "spans sent/s" },
+        { "refId": "C", "expr": "rate(otelcol_exporter_send_failed_log_records[$__rate_interval])", "legendFormat": "logs failed/s" }
       ]
     },
     {
