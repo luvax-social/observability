@@ -29,6 +29,11 @@ plain `docker compose -f observability/compose.local.yaml up -d` starts nothing.
 
 1. Copy `.env.example` to `.env` and fill in the passwords.
 2. Start the backend's own infrastructure first: `cd backend && docker compose up -d`.
+   The compose file pins its project name to `backend`, so this works from any invocation
+   directory without `-p backend`, and matches the container names this stack expects.
+   A `postgres-monitoring-role` one-shot service runs on every `up`, including against a
+   Postgres volume that already existed before this service was added, so the `postgresql`
+   dashboard's `pg_up` and its other panels populate without a manual grant.
 3. Start this stack: `cd .. && docker compose -f observability/compose.local.yaml --profile observability up -d`.
 4. Start the backend with tracing on: set `OTLP_EXPORT_ENABLED=true` in `backend/.env`, then run the
    backend as usual (`start-app.bat`, or `cd backend && ./mvnw spring-boot:run`).
