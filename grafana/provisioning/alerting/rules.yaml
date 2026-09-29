@@ -490,12 +490,15 @@ groups:
                 - evaluator: { type: gt, params: [0] }
 
       # A backlog that keeps growing while the consumers are running. RabbitMQ queue stalled only
-      # fires when a queue has no consumers at all. The threshold and window are provisional and are
-      # set from the reseed drain measured in the local rehearsal.
+      # fires when a queue has no consumers at all. The window is set from the reseed drain measured in
+      # the local rehearsal: a reseed of about 70,000 events drained at the outbox publisher's rate of
+      # about 65 a second, and recommendation.feedback.queue peaked at 23,273 and stayed above 5,000
+      # for 20 minutes, so a 45 minute window lets a reseed finish without firing. A consumer that
+      # stalls under continuous input crossed 5,000 within about a minute and fires after the window.
       - uid: luvax-analytics-ingestion-lag
         title: Analytics ingestion falling behind
         condition: C
-        for: 15m
+        for: 45m
         noDataState: OK
         execErrState: Error
         labels:
