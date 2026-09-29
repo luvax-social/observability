@@ -65,6 +65,10 @@ groups:
               conditions:
                 - evaluator: { type: gt, params: [0] }
 
+      # A breaker that is not closed for a minute. half_open counts as well as open: against a hung
+      # dependency (a paused ClickHouse, whose probe calls time out instead of failing at once) the
+      # breaker alternates 30 seconds open with about 30 seconds half-open, so an open-only rule
+      # never held for its full minute and stayed silent for the whole outage.
       - uid: luvax-circuit-breaker-open
         title: Circuit breaker open
         condition: C
@@ -82,7 +86,7 @@ groups:
               refId: A
               instant: true
               range: false
-              expr: max by (name) (resilience4j_circuitbreaker_state{state=~"open|forced_open"})
+              expr: max by (name) (resilience4j_circuitbreaker_state{state=~"open|forced_open|half_open"})
           - refId: C
             datasourceUid: __expr__
             model:

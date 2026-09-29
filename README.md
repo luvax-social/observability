@@ -98,7 +98,7 @@ log discovery reads the backend compose project's own container names
 - Metrics: Prometheus, 30 day / 10 GB retention. Eight dashboards cover the JVM and HTTP layer, the
   outbox/inbox, RabbitMQ, PostgreSQL, Redis, Elasticsearch, Gorse, and the host and containers.
 - Alerts: fourteen rules, delivered to a Discord channel.
-  The six baseline rules are DLQ not empty, outbox DEAD rows, an open circuit breaker, a container restart loop, disk above 85 percent, and a scrape target down.
+  The six baseline rules are DLQ not empty, outbox DEAD rows, a circuit breaker that stays open or half-open for a minute, a container restart loop, disk above 85 percent, and a scrape target down.
   Phase 1.5 added five: origin TLS certificate expiring, a stalled RabbitMQ queue, a stalled outbox publisher, an unhealthy Elasticsearch cluster, and a high backend 5xx rate.
   Phase 2 added three: ClickHouse async inserts failing, analytics events dropped, and analytics ingestion falling behind.
   Critical-severity alerts repeat hourly; warning-severity alerts keep the original 4-hour repeat interval.
