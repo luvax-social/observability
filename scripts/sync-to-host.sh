@@ -22,7 +22,7 @@ sudo install -d -m 0755 "$TARGET_DIR"
 git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$TMP_DIR/observability"
 sudo rsync -a --delete --exclude .git "$TMP_DIR/observability/" "$TARGET_DIR/"
 
-sudo chmod 0755 "$TARGET_DIR/clickhouse/initdb/01-create-users.sh"
+sudo chmod 0755 "$TARGET_DIR"/clickhouse/initdb/*.sh
 sudo chown -R 472:0 "$TARGET_DIR/grafana"
 
 echo "Synced observability/ to $TARGET_DIR"
