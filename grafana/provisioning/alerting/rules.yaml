@@ -416,3 +416,107 @@ groups:
               refId: C
               type: math
               expression: "$ThreshRatio && $ThreshCount"
+
+  - orgId: 1
+    name: phase-2
+    folder: Alerting
+    interval: 1m
+    rules:
+      # New in Phase 2 (analytics on ClickHouse). Three gaps the Phase 1 and 1.5 rules cannot see.
+      # A rejected analytics message reaches a *.dlq (DLQ not empty), an unavailable ClickHouse opens
+      # the clickhouse circuit breaker (Circuit breaker open) and stops the analytics consumers
+      # (RabbitMQ queue stalled), and a down scrape target is already covered; none of those sees
+      # the three conditions below.
+      #
+      # UserEventRecorder inserts with wait_for_async_insert=0, so a bad row is acknowledged to the
+      # backend and dropped by ClickHouse afterwards; only ClickHouse's own counter records it.
+      - uid: luvax-clickhouse-async-insert-failures
+        title: ClickHouse async inserts failing
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: ClickHouse rejected asynchronous inserts in the last 10 minutes
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              expr: sum(increase(ClickHouseProfileEvents_FailedAsyncInsertQuery[10m]))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+
+      # Drops the breaker and the schema gate do not explain: no permit free, or an unexpected
+      # error. circuit_open and not_ready drops are outages the other rules already report.
+      - uid: luvax-analytics-events-dropped
+        title: Analytics events dropped
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: The behavioural event recorder dropped events (reason {{ $labels.reason }})
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              expr: >-
+                sum by (reason) (increase(luvax_analytics_user_events_dropped_total{reason=~"permits|error"}[15m]))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+
+      # A backlog that keeps growing while the consumers are running. RabbitMQ queue stalled only
+      # fires when a queue has no consumers at all. The threshold and window are provisional and are
+      # set from the reseed drain measured in the local rehearsal.
+      - uid: luvax-analytics-ingestion-lag
+        title: Analytics ingestion falling behind
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: Queue {{ $labels.queue }} holds a growing backlog of ready messages
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              expr: >-
+                max by (queue) (rabbitmq_detailed_queue_messages_ready{queue=~"admin\\.action\\.replication\\.queue|admin\\.platform-stats\\.queue|recommendation\\.feedback\\.queue|recommendation\\.user-event\\.import\\.queue"})
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [5000] }
