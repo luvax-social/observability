@@ -103,7 +103,8 @@ log discovery reads the backend compose project's own container names
   Phase 2 added three: ClickHouse async inserts failing, analytics events dropped, and analytics ingestion falling behind.
   Critical-severity alerts repeat hourly; warning-severity alerts keep the original 4-hour repeat interval.
   **Every Phase 1.5 threshold is provisional**, to be revisited after two weeks of production data: the RabbitMQ stall rule's 5-minute pending window, the outbox-stall 300-second threshold, and the backend 5xx rule's 5 percent ratio and 20-error count guard.
-  The Phase 2 ingestion-lag threshold and pending window are provisional until measured against a real reseed drain.
+  The Phase 2 ingestion-lag rule fires above 5,000 ready messages held for 45 minutes.
+  The window comes from a measured reseed drain, in which the feedback queue stayed above 5,000 for about 20 minutes.
 
 Traces and logs are best effort: a missed export is not replayed, and both stores are disposable and
 rebuildable from nothing but live traffic. Neither is a source of truth.
