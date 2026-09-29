@@ -20,7 +20,11 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 sudo install -d -m 0755 "$TARGET_DIR"
 
 git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$TMP_DIR/observability"
-sudo rsync -a --delete --exclude .git "$TMP_DIR/observability/" "$TARGET_DIR/"
+# ClickHouse's entrypoint writes users.d/default-user.xml on the host at first boot, to disable the
+# passwordless "default" user. It is not tracked, so --delete would remove it and leave that user
+# open over HTTP on the coolify network until the container is recreated. Excluding it also
+# protects it from --delete.
+sudo rsync -a --delete --exclude .git --exclude /clickhouse/users.d/default-user.xml     "$TMP_DIR/observability/" "$TARGET_DIR/"
 
 sudo chmod 0755 "$TARGET_DIR"/clickhouse/initdb/*.sh
 sudo chown -R 472:0 "$TARGET_DIR/grafana"
