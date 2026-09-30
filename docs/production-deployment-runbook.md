@@ -1,13 +1,10 @@
-# Luvax observability: production deployment handoff
+# Luvax observability production deployment runbook
 
-This is the single entry point for the assistant helping the user deploy and evolve production observability.
-Read this file in full before proposing any step.
-You are a chat assistant (Claude on claude.ai).
-You have no shell, no Docker access, no SSH, no `gh`, and no access to the repositories.
-The user runs every command on the production host (over Tailscale SSH) and pastes the output back to you.
-You have never seen the planning conversation, the implementation reports, or the local rehearsals that produced this document.
-Everything you need is in this file.
-Where this file names a repository file (for example `compose.prod.yaml`), you cannot open it; ask the user to paste or upload it only if a step genuinely needs its content.
+This runbook describes the production monitoring and analytics topology, deployment steps,
+verification gates, rollback, and known failure modes. Read the relevant stage in full before
+changing production. Commands run on the production host over Tailscale SSH unless a step says
+to use the Coolify or Cloudflare UI. Check repository files such as `compose.prod.yaml` against
+the deployed revision before applying them.
 
 ## 1. Purpose and scope
 
@@ -21,12 +18,12 @@ Phase 2 is the first phase since Phase 1 to change backend code.
 
 ## 2. Operating model
 
-- **The user performs every action.** That includes every Coolify and Cloudflare UI change and every shell command on the host. You tell the user exactly what to click or run, why, and what output to expect, then you read the output they paste and decide whether the step's gate passed.
-- **One step at a time.** Give the commands for exactly one runbook step (or one sub-step), wait for the pasted output, verify it against the step's expected result and gate, and only then give the next step. Never batch several write steps into one message.
-- **Read-only versus write.** Commands marked **[WRITE]** change production. Before giving one, state what it changes and its rollback, and ask the user to confirm they are ready. Unmarked commands are read-only diagnostics the user can run at any time.
-- **Secrets never enter the chat.** Passwords, API keys, tokens and webhook URLs are generated and entered by the user directly on the host or in Coolify. Write commands that need a secret use a shell variable the user sets locally first, for example `read -rs POSTGRES_MONITOR_PASSWORD; export POSTGRES_MONITOR_PASSWORD`, so the value never appears in the command text, the shell history, or the chat. If pasted output contains a secret, tell the user to redact it and treat that secret as exposed (rotate it). Never invent a secret value.
-- **Do not guess.** If pasted output does not match the expected result, stop, diagnose with read-only commands, and consult section 9 before proposing any change. If a fact this file assumes (a container name, a version, a setting) differs from what the host shows, the host wins.
-- **Record keeping.** This chat is the record of the deployment. At the end of a runbook, summarize every finding, every deviation from this document, and every verification result in one message the user can save.
+- **The operator performs every action.** That includes every Coolify and Cloudflare UI change and every shell command on the host. Check each step's expected output and gate before proceeding.
+- **One step at a time.** Complete and verify one runbook step (or sub-step) before starting the next write step.
+- **Read-only versus write.** Commands marked **[WRITE]** change production. Review what each changes and its rollback before running it. Unmarked commands are read-only diagnostics.
+- **Secrets stay on the host.** Generate and enter passwords, API keys, tokens, and webhook URLs directly on the host or in Coolify. Commands that need a secret use a local shell variable, for example `read -rs POSTGRES_MONITOR_PASSWORD; export POSTGRES_MONITOR_PASSWORD`, so the value does not appear in command text or shell history. Redact secrets from shared output and rotate any that were exposed.
+- **Do not guess.** If output does not match the expected result, stop, diagnose with read-only commands, and consult section 9 before changing anything. If a fact this file assumes (a container name, a version, a setting) differs from the host, the host wins.
+- **Record keeping.** Record findings, deviations, and verification results in the deployment record.
 
 ## 3. Current production topology
 
@@ -90,12 +87,12 @@ These are production facts, not assumptions; they were discovered deploying `gra
   Leaving No TLS Verify Off produces a 502 with a certificate-name mismatch, because `cloudflared` refuses to validate a certificate that does not match the hostname it requested.
 - **`api.luvax.online` and the apex `luvax.online`** remain file-managed (`config.yml`), with No TLS Verify Off, and a real P0.5 discovery run confirmed both present a real Let's Encrypt certificate (issuer `Let's Encrypt`, expiring Dec 20 2026 at the time of that run). This is exactly why the Phase 1.5 TLS-expiry probe (section 6) targets these two.
 - **`www.luvax.online` and `coolify.luvax.online` also present `CN = TRAEFIK DEFAULT CERT`**, the same shape as `grafana.luvax.online`, found by the same P0.5 run - not an assumption carried over from the original runbook, which incorrectly assumed all four non-`grafana` hostnames had real certificates. Both are excluded from the TLS-expiry probe for the same reason `grafana.luvax.online` is.
-  **This is flagged, not silently resolved**: if either hostname is a real traffic path with No TLS Verify Off (as section 3's Coolify conventions describe for "other hostnames" generally), a client-validated connection to it should be failing with a certificate-name mismatch right now, the same failure mode described above for `grafana.luvax.online` before its No TLS Verify was turned on. Before relying on this document's silence here, check with a plain `curl -sIL https://www.luvax.online` and `curl -sIL https://coolify.luvax.online` whether either is actually broken, or whether neither carries real traffic and the mismatch has simply never been noticed. Fixing a real Cloudflare Tunnel misconfiguration is outside this repository's change and outside what a chat assistant without Cloudflare access can safely diagnose further - if either hostname turns out to be broken, that is a separate, dedicated fix, not part of this observability change.
+  **This is flagged, not silently resolved**: if either hostname is a real traffic path with No TLS Verify Off (as section 3's Coolify conventions describe for "other hostnames" generally), a client-validated connection to it should be failing with a certificate-name mismatch right now, the same failure mode described above for `grafana.luvax.online` before its No TLS Verify was turned on. Check with `curl -sIL https://www.luvax.online` and `curl -sIL https://coolify.luvax.online` whether either is broken or neither carries real traffic. If either is broken, diagnose and fix its Cloudflare Tunnel configuration as a separate change.
 
 ## 4. Phase 1, deployed: history
 
 Phase 1 (traces, logs, metrics, dashboards, alerting) was deployed to production and is live.
-Full runbook detail (R0-R10, the original per-step commands) lived in earlier revisions of this document and in `.workspace/reports/p1/`; it is condensed here because the deployment is complete and stable, not pending.
+Full runbook detail (R0-R10, the original per-step commands) lived in earlier revisions of this document. It is condensed here because the deployment is complete and stable.
 
 - **R0-R1**: preflight confirmed host facts (Postgres 18, `json-file` logging, Elasticsearch on plain HTTP, `luvax-prod` as the backend's `coolify.resourceName`), then `scripts/sync-to-host.sh` populated `/data/luvax/observability` on the host.
 - **R2-R4**: Postgres gained `pg_stat_statements` and a read-only `luvax_monitor` role (plus the `gorse` database, which nothing else provisions); Elasticsearch gained a read-only `luvax_monitor` user.
@@ -135,7 +132,7 @@ The sequence below is one cutover: create the four new resources first (harmless
 
 ### P0 - Discover the Coolify proxy container (read-only, before the cutover)
 
-Who: the user runs; you read the output.
+Operator: run the commands and check the output.
 
 The blackbox-exporter's origin-TLS probe (see below) needs the Coolify proxy's real container name and network.
 This document does not have that fact recorded yet.
@@ -147,13 +144,13 @@ docker inspect <candidate-name> --format '{{json .NetworkSettings.Networks}}' | 
 
 Expected: a container whose image is Coolify's proxy (commonly Traefik-based, often named `coolify-proxy`), attached to the `coolify` network.
 Record its name as `$PROXY` for the steps below.
-If more than one container matches, ask the user to confirm which one actually terminates TLS for `api.luvax.online` (the one already proven working) before proceeding.
+If more than one container matches, confirm which one actually terminates TLS for `api.luvax.online` (the one already proven working) before proceeding.
 
 Gate before P1: `$PROXY` is a real, running container name, attached to `coolify`.
 
 ### P0.5 - Record the origin certificate per hostname (read-only, before the cutover)
 
-Who: the user runs; you read the output.
+Operator: run the commands and check the output.
 
 **Already run once**, against production, with the results below. `blackbox-exporter/config.yml` and the `blackbox-origin-tls` job in `prometheus/prometheus.prod.yml` already reflect this outcome (two modules/targets, not four). Re-run before the real cutover only to catch drift since that run - a certificate can be renewed or a hostname's routing can change between this document being written and the day of the cutover.
 
@@ -180,10 +177,10 @@ Gate before P1: all four hostnames' issuer and expiry are recorded (or excluded,
 ### P1 - Record the rollback point (read-only)
 
 ```bash
-cat /data/luvax/observability/.git-commit 2>/dev/null || echo "not recorded - ask the user which observability commit is currently deployed"
+cat /data/luvax/observability/.git-commit 2>/dev/null || echo "not recorded - check which observability commit is currently deployed"
 ```
 
-If the host has no record of the deployed commit, ask the user to check the `luvax-observability` resource's configured branch/commit in the Coolify UI, or the last commit merged to `observability`'s `main` before this session.
+If the host has no record of the deployed commit, check the `luvax-observability` resource's configured branch/commit in the Coolify UI, or the last commit merged to `observability`'s `main` before deployment.
 Record it as `$ROLLBACK_SHA`.
 
 Gate before P2: `$ROLLBACK_SHA` is recorded.
@@ -207,7 +204,7 @@ Gate before P3: both verification commands pass and the placeholder substitution
 
 ### P3 - Create and deploy the four new resources [WRITE]
 
-Who: the user (UI), one resource at a time. For each, Project `luvax-prod`, New Resource, Docker Compose Empty, paste the matching compose file **unmodified** (`compose.host.prod.yaml`, `compose.postgres-exporter.prod.yaml`, `compose.redis-exporter.prod.yaml`, `compose.elasticsearch-exporter.prod.yaml`), enable "Connect To Predefined Network", copy the matching environment variables from the current `luvax-observability` resource's own environment (the same values, since these exporters previously ran inside it), deploy.
+Operator (UI), one resource at a time. For each, Project `luvax-prod`, New Resource, Docker Compose Empty, paste the matching compose file **unmodified** (`compose.host.prod.yaml`, `compose.postgres-exporter.prod.yaml`, `compose.redis-exporter.prod.yaml`, `compose.elasticsearch-exporter.prod.yaml`), enable "Connect To Predefined Network", copy the matching environment variables from the current `luvax-observability` resource's own environment (the same values, since these exporters previously ran inside it), deploy.
 
 This is safe to do while the old core resource keeps running its own copies of these same exporters: nothing scrapes the new ones yet, and two read-only exporters against one datastore do not conflict.
 
@@ -226,7 +223,7 @@ Gate before P4: all four new resources show their container `Up`.
 
 ### P4 - Single redeploy of the core resource [WRITE]
 
-Who: the user (UI). Open the `luvax-observability` resource, replace its compose content with the new (shrunk) `compose.prod.yaml`, replace `prometheus/prometheus.prod.yml`, `grafana/provisioning/dashboards/dashboards.yaml`, `grafana/provisioning/alerting/rules.yaml`, and `grafana/provisioning/alerting/policies.yaml` with their new versions (already synced to the host in P2), and Redeploy.
+Operator (UI). Open the `luvax-observability` resource, replace its compose content with the new (shrunk) `compose.prod.yaml`, replace `prometheus/prometheus.prod.yml`, `grafana/provisioning/dashboards/dashboards.yaml`, `grafana/provisioning/alerting/rules.yaml`, and `grafana/provisioning/alerting/policies.yaml` with their new versions (already synced to the host in P2), and Redeploy.
 
 This single redeploy carries every change: exporter services removed from this resource's compose file, `NETWORKS: 1` added to the socket proxy, `blackbox-exporter` added, the new Prometheus scrape config, the new dashboard folders, and the new/moved alert rules.
 
@@ -338,16 +335,16 @@ Synthetic alert triggers, safety-classified for production:
 
 ## 8. Local rehearsal evidence (Phase 1.5)
 
-Proven in a disposable local topology outside any tracked repository (method: `.workspace/reports/p1/p4-report.md`), not on the production host:
+Proven in a disposable local topology outside any tracked repository, not on the production host:
 
 - The single-cutover sequence (P1-P8 above) executed literally: old single-resource state deployed first, the four new resources created and coexisting harmlessly with the still-running old exporters, one redeploy of the core resource, the leftover-old-exporter finding reproduced exactly as documented and cleared with the given command, the legacy folder confirmed empty of both dashboards and alert rules before deletion, and a full rollback executed and verified to restore the old state.
 - The container-name addressing proof: each split exporter, attached to both its own resource network and `coolify` at creation (replicating Coolify's real attachment order), yielded exactly one Prometheus target with `up=1`; recreating one exporter under a new container name (simulating a redeploy) converged to exactly the new target within one `docker_sd_configs` refresh cycle, with no lingering old target.
 - The origin-TLS probe design, proven against a local TLS-terminating stand-in presenting two different certificates (one expiring inside 14 days, one outside it) selected by SNI: the probe correctly read each certificate's real expiry through the stand-in.
 - **A real defect found and fixed by this rehearsal**: the Elasticsearch cluster-health rule's original query used a metric name (`elasticsearch_cluster_health_up`) that does not exist on the pinned exporter version, and combined a filtering comparison with `or` in a way that would have made the rule fire continuously in a healthy cluster. Corrected in `grafana/provisioning/alerting/rules.yaml` before this document was written; see that file's inline comment for the corrected query.
 - The five new alert rules' fire-and-resolve behavior, each verified against its real condition logic (with pending windows temporarily shortened for the rehearsal only, not in the shipped rules.yaml).
-- The ten-dashboard, two-resolution screenshot sweep in their new folders, under `.workspace/reports/p15/rehearsal/`.
+- All ten dashboards rendered at two viewport sizes in their new folders.
 
-Known differences from production, all forced by the local machine, none shipped: see `.workspace/reports/p15/p15b-report.md` section on the rehearsal for the full list (synthetic backing services in place of the real datastores, a synthetic backend metrics endpoint in place of the real Spring application, self-signed rehearsal certificates, Windows/Docker Desktop artifacts already documented in the Phase 1 rehearsal evidence below).
+Known differences from production, all forced by the local machine and none shipped: synthetic backing services stood in for the real datastores, a synthetic backend metrics endpoint stood in for the Spring application, rehearsal certificates were self-signed, and Windows/Docker Desktop introduced local artifacts.
 
 ## 9. Known failure modes and diagnosis
 
@@ -390,18 +387,18 @@ Known differences from production, all forced by the local machine, none shipped
   It ships with the frontend release, not with this runbook.
 
 Order and why:
-- H2 (the core resource redeploy) comes before H3 because it places the three passwords in the ClickHouse container, where the provisioning script reads them, so no password appears in a command line or in this chat.
+- H2 (the core resource redeploy) comes before H3 because it places the three passwords in the ClickHouse container, where the provisioning script reads them, so no password appears in a command line or shared log.
 - The database and users must exist before the backend starts (H3 before H4), or the backend runs degraded and retries every 30 seconds, which is safe but not the goal.
 - The backend must have migrated before the reseed (H4 before H5), and the reseed must have drained before the Gorse rebuild reads ClickHouse (H6 before H7).
 - Every step is marked **[WRITE]** where it changes production; H0, H6 and H8 are read-only.
 
-### Values a step substitutes (never typed into the chat)
+### Values a step substitutes (keep out of shared logs)
 
 - `$OBS`: the uuid suffix of the core observability containers (`docker ps`).
 - `$PG`: the PostgreSQL container name, `rgtu7vdi4q9pfhtsbnldv89a`.
 - `$APPROLE`: the PostgreSQL role the backend connects as (the name only, from the Coolify variable `POSTGRES_USER` of `luvax-prod`; never its password).
 - `$BACKEND`: the current backend container name, `docker ps --filter label=coolify.resourceName=luvax-prod --format '{{.Names}}'` (it changes on every deploy).
-- The three analytics passwords are generated by the user and entered only in Coolify (H2 and H4).
+- The three analytics passwords are generated by the operator and entered only in Coolify (H2 and H4).
 
 ### Corrections the local rehearsal made to this outline
 
@@ -424,7 +421,7 @@ Order and why:
 
 ### H0 - Read-only preflight
 
-Who: the user runs each command and pastes the output.
+Operator: run each command and check the output.
 Nothing here writes.
 
 ```bash
@@ -482,7 +479,7 @@ Gate: ClickHouse is `26.3.33.24` and has no `luvax_analytics`; Flyway reports `1
 
 ### H0b - Grant the two privileges the application role lacks [WRITE, conditional]
 
-Who: the user, as the PostgreSQL superuser, only if H0 showed `rolsuper = f` and a missing privilege.
+Operator, as the PostgreSQL superuser, only if H0 showed `rolsuper = f` and a missing privilege.
 Every statement here is idempotent; the grant, the check, the revoke and a second grant were rehearsed on PostgreSQL 18 in this order (stage R3), with the application role a non-superuser.
 
 `PSQ` is the superuser psql on the PostgreSQL container.
@@ -533,7 +530,7 @@ The privilege-missing behaviour was rehearsed and is safe to leave ungranted: th
 
 ### H1 - Sync the merged observability `main` to the host [WRITE]
 
-Who: the user, on the host.
+Operator, on the host.
 
 ```bash
 REPO_URL=https://github.com/luvax-social/observability.git BRANCH=main TARGET_DIR=/data/luvax/observability \
@@ -555,7 +552,7 @@ Gate: the four checks pass.
 
 ### H2 - Redeploy the core resource with the three analytics passwords [WRITE]
 
-Who: the user, in the Coolify UI.
+Operator, in the Coolify UI.
 
 1. Generate three passwords locally with `openssl rand -base64 36 | tr -d '/+=' | cut -c1-40`, one for each role.
    Enter them only in Coolify, as `CLICKHOUSE_ANALYTICS_WRITER_PASSWORD`, `CLICKHOUSE_ANALYTICS_READER_PASSWORD` and `CLICKHOUSE_ANALYTICS_MIGRATOR_PASSWORD` on the `luvax-observability` resource.
@@ -580,7 +577,7 @@ Gate: all six containers `Up`; three `set` lines; `default-user.xml` present aga
 
 ### H3 - Provision the analytics database on the existing volume [WRITE]
 
-Who: the user, on the host.
+Operator, on the host.
 `initdb` does not run on an existing data directory (the rehearsal counted zero `docker-entrypoint-initdb.d` lines in the container log), so the same script is run by hand, twice.
 
 ```bash
@@ -612,7 +609,7 @@ Gate: two `exit=0`, grants and profiles as listed, three logins, both 497 refusa
 
 ### H4 - Deploy the backend release [WRITE]
 
-Who: the user, in the Coolify UI, then on the host.
+Operator, in the Coolify UI, then on the host.
 
 1. In the `luvax-prod` environment add `ANALYTICS_CLICKHOUSE_URL=jdbc:clickhouse://clickhouse-$OBS:8123/luvax_analytics` (substitute the real uuid), and `ANALYTICS_CLICKHOUSE_WRITER_PASSWORD`, `ANALYTICS_CLICKHOUSE_READER_PASSWORD`, `ANALYTICS_CLICKHOUSE_MIGRATOR_PASSWORD` with the same three values as H2.
    `ANALYTICS_ENABLED` defaults to `true`.
@@ -639,7 +636,7 @@ Gate: every expectation above.
 
 ### H5 - Reseed [WRITE]
 
-Who: the user, in the Coolify UI.
+Operator, in the Coolify UI.
 This wipes every domain table in the production database and regenerates the seed dataset, as in the earlier production seeding.
 It also truncates the three ClickHouse analytics tables (as the migrator) after purging every broker queue.
 
@@ -660,7 +657,7 @@ Gate: `full seed run complete` logged, no `[seed] seed run failed`, the three va
 
 ### H6 - Drain and consistency
 
-Who: the user.
+Operator.
 Expect about 30 minutes (the rehearsal took 29 minutes from the seed run's end to the last analytics queue empty; 17 of them are the publisher at about 65 events per second, then the feedback queue needs a further 11 minutes).
 While it drains, `Analytics ingestion falling behind` is expected to stay `Normal` with the calibrated 45 minute window (a 15 minute window fires); `recommendation.feedback.queue` peaks near 23,000 messages.
 
@@ -684,7 +681,7 @@ CHQ "SELECT table, status, count() FROM system.asynchronous_insert_log WHERE dat
 Expected (rehearsal): `admin_actions` 277 on both sides; `4320` distinct buckets (plus any live bucket collected since); `user_events` 64,860 with 54,859 carrying a feedback type (28,098 `post_view`, 20,000 `post_like`, 2,000 `post_save`, 4,749 `post_comment`, 12 `post_share` are the consumed engagement events; the other 10,000 rows are the imports, and every one of the 20 event types except `post_view` has at least 5 rows); no `async insert` status other than `Ok`.
 One extra `session_start` row per login made since the reseed is normal.
 
-Then open, as the seeded `admin` account (its password is in the seed README, never in this chat), in the admin panel: the audit log (unfiltered, and one page forward), the activity log for one user with a window of at most 30 days, and the statistics screen; each renders (the frontend note under the audit log date range belongs to the frontend release and is checked in its own stage).
+Then open, as the seeded `admin` account (its password is in the seed README, never in shared logs), in the admin panel: the audit log (unfiltered, and one page forward), the activity log for one user with a window of at most 30 days, and the statistics screen; each renders (the frontend note under the audit log date range belongs to the frontend release and is checked in its own stage).
 The equivalent API checks returned 200 with `degraded: false` for `GET /admin/actions?limit=3`, rows for `GET /admin/user-events?userId=&from=&to=`, and a snapshot with `totalUsers`, `usersByStatus`, `topHashtags` for `GET /admin/stats/current`.
 
 Rollback: none needed.
@@ -692,7 +689,7 @@ Gate: counts agree as listed; the three screens render.
 
 ### H7 - Rebuild Gorse from PostgreSQL and ClickHouse [WRITE]
 
-Who: the user, in the Coolify UI, then on the host.
+Operator, in the Coolify UI, then on the host.
 Do this only after H6 passed, because the rebuild reads the feedback history from ClickHouse.
 
 Before: record the For You sanity as three QA accounts (fixed accounts, so before and after compare).
@@ -747,7 +744,7 @@ Gate: the run row is `DONE`, `luvax_gorse_rebuild_verification_failures_total` i
 
 ### H8 - Final verification
 
-Who: the user, 30 minutes after H7.
+Operator, 30 minutes after H7.
 Nothing here writes.
 
 - Every gate of H2 to H7 still holds: `docker ps` for the six core containers, the breaker gauge, the four `luvax_analytics_ingestion_running` gauges, the consistency queries of H6.
@@ -775,7 +772,7 @@ Gate: as listed; record the result of the whole runbook in one message, as secti
 
 ### H9 - Roll the backend release back [WRITE]
 
-Who: the user.
+Operator.
 Use it only to abandon the release that added V127 to V133; it restores the PostgreSQL schema the previous backend expects and does not restore data.
 
 The order matters, and it differs from the outline: the previous image validates Flyway history at startup and refuses to start while V127 to V133 are recorded as applied (as the script header states; the rehearsal ran the script first and did not start the old image ahead of it), so the script runs before it.

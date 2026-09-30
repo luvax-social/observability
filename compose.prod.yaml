@@ -9,7 +9,7 @@
 # elasticsearch-exporter, node-exporter, cadvisor) now live in their own Coolify resources, each
 # from its own compose file in this repository (compose.host.prod.yaml,
 # compose.postgres-exporter.prod.yaml, compose.redis-exporter.prod.yaml,
-# compose.elasticsearch-exporter.prod.yaml). See docs/deployment-handoff.md, "Phase 1.5" runbook.
+# compose.elasticsearch-exporter.prod.yaml). See docs/production-deployment-runbook.md, "Phase 1.5" runbook.
 services:
   clickhouse:
     # Pinned to the 26.3 LTS line. From 26.6 the official build targets x86-64-v3 (AVX2); the
@@ -130,7 +130,7 @@ services:
 
   blackbox-exporter:
     # New in Phase 1.5: probes the Coolify proxy's origin TLS certificate per hostname. See
-    # docs/deployment-handoff.md, "Phase 1.5" runbook and section 9, for the Cloudflare Access
+    # docs/production-deployment-runbook.md, "Phase 1.5" runbook and section 9, for the Cloudflare Access
     # ACME-bypass gotcha this alert is meant to catch.
     image: prom/blackbox-exporter:v0.27.0
     restart: unless-stopped

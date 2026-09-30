@@ -20,7 +20,7 @@ Grafana.
 Each of the four datastore/host exporters opts into Prometheus's discovery with a
 `luvax.prometheus.scrape=true` label (see `prometheus/prometheus.prod.yml`, job
 `luvax-exporters`); Prometheus finds them through `docker-socket-proxy`'s `docker_sd_configs`
-endpoint, addressed by container name, not container IP (see `docs/deployment-handoff.md`,
+endpoint, addressed by container name, not container IP (see `docs/production-deployment-runbook.md`,
 "Phase 1.5" runbook, for why).
 
 | Service | Role |
@@ -145,8 +145,8 @@ On a server that has never flushed an asynchronous insert the panel reports an u
 
 ## Production runbook
 
-The runbook (R0-R10) lives at [`docs/deployment-handoff.md`](docs/deployment-handoff.md), which is the single authoritative copy, proven end to end by a local production-topology rehearsal.
-That document is also the entry point for the agent helping deploy this phase: it additionally covers the operating model, the current production topology, the R0 decision table, post-deployment verification, and known failure modes.
+The runbook (R0-R10) lives at [`docs/production-deployment-runbook.md`](docs/production-deployment-runbook.md), which is the single authoritative copy, proven end to end by a local production-topology rehearsal.
+It also covers the operating model, current production topology, preflight decision table, post-deployment verification, and known failure modes.
 
 ## Resolved decisions from the plan's risk list
 
