@@ -263,6 +263,7 @@
         "overrides": []
       },
       "options": {
+        "text": { "titleSize": 16, "valueSize": 28 },
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
