@@ -1,0 +1,281 @@
+{
+  "uid": "user-activity",
+  "title": "User Activity",
+  "description": "Behavioural events from luvax_analytics.user_events, plus the health of the analytics ingestion pipeline.",
+  "tags": ["luvax", "business"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": { "from": "now-7d", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Activity",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Daily active users",
+      "description": "Distinct users with at least one recorded event on the UTC day. The current day is partial.",
+      "gridPos": { "h": 9, "w": 8, "x": 0, "y": 1 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "bars", "fillOpacity": 80, "lineWidth": 1, "axisSoftMin": 0 }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "sql",
+          "format": 0,
+          "rawSql": "SELECT toStartOfDay(created_at) AS time, uniqExact(user_id) AS daily_active_users FROM luvax_analytics.user_events FINAL WHERE $__timeFilter(created_at) GROUP BY time ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Events per day by type",
+      "gridPos": { "h": 9, "w": 16, "x": 8, "y": 1 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "displayName": "${__field.labels.series}",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "axisSoftMin": 0,
+            "stacking": { "mode": "normal", "group": "A" }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "sql",
+          "format": 0,
+          "rawSql": "SELECT toStartOfDay(created_at) AS time, toString(event_type) AS series, count() AS events FROM luvax_analytics.user_events FINAL WHERE $__timeFilter(created_at) GROUP BY time, series ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Top 20 search terms",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 10 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": { "defaults": {"unit": "short"}, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "sql",
+          "format": 1,
+          "rawSql": "SELECT JSONExtractString(metadata, 'query') AS term, count() AS searches FROM luvax_analytics.user_events FINAL WHERE $__timeFilter(created_at) AND event_type = 'search' AND term != '' GROUP BY term ORDER BY searches DESC, term LIMIT 20"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "For You feedback per day by type",
+      "description": "Events that were sent to the recommender, by the feedback type they were sent with.",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 10 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "displayName": "${__field.labels.series}",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "axisSoftMin": 0,
+            "stacking": { "mode": "normal", "group": "A" }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "sql",
+          "format": 0,
+          "rawSql": "SELECT toStartOfDay(created_at) AS time, feedback_type AS series, count() AS feedback FROM luvax_analytics.user_events FINAL WHERE $__timeFilter(created_at) AND feedback_type IS NOT NULL GROUP BY time, series ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "row",
+      "title": "Ingestion health",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 19 },
+      "panels": []
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Freshness per table",
+      "description": "Seconds since the newest row landed in each table, regardless of the time range. A table with no rows shows a very large age.",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 20 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": { "defaults": {"unit": "s"}, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "sql",
+          "format": 1,
+          "rawSql": "SELECT 'user_events' AS analytics_table, dateDiff('second', max(ingested_at), now()) AS seconds_since_last_row FROM luvax_analytics.user_events FINAL UNION ALL SELECT 'admin_actions', dateDiff('second', max(replicated_at), now()) FROM luvax_analytics.admin_actions FINAL UNION ALL SELECT 'platform_stats', dateDiff('second', max(computed_at), now()) FROM luvax_analytics.platform_stats FINAL"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Async insert failures by table",
+      "description": "Failed asynchronous inserts. The recorder inserts without waiting, so ClickHouse is the only place these show.",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 20 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "displayName": "${__field.labels.series}",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "axisSoftMin": 0,
+            "stacking": { "mode": "normal", "group": "A" }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "sql",
+          "format": 0,
+          "rawSql": "SELECT toStartOfHour(event_time) AS time, table AS series, count() AS failures FROM system.asynchronous_insert_log WHERE $__timeFilter(event_time) AND database = 'luvax_analytics' AND status != 'Ok' GROUP BY time, series ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Recorder drops by reason",
+      "description": "Behavioural events the recorder dropped instead of slowing a request. circuit_open and not_ready are outages; permits and error are not.",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "axisSoftMin": 0,
+            "stacking": { "mode": "normal", "group": "A" }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (reason) (increase(luvax_analytics_user_events_dropped_total[$__rate_interval]))",
+          "legendFormat": "{{reason}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Audit log fallbacks",
+      "description": "Audit log listings answered from PostgreSQL because ClickHouse was unavailable.",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 28 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "bars", "fillOpacity": 80, "lineWidth": 1, "axisSoftMin": 0 }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(luvax_analytics_audit_log_fallback_total[$__rate_interval]))",
+          "legendFormat": "fallbacks"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "Analytics listener state",
+      "description": "Whether each analytics consumer is running. All should be running; stopped means the ClickHouse circuit breaker is open or the schema is not ready.",
+      "gridPos": { "h": 8, "w": 16, "x": 8, "y": 28 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": { "0": {"text": "stopped", "color": "red"}, "1": {"text": "running", "color": "green"} }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "text": { "titleSize": 16, "valueSize": 28 },
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (listener) (luvax_analytics_ingestion_running)",
+          "legendFormat": "{{listener}}",
+          "instant": true
+        }
+      ]
+    }
+  ]
+}

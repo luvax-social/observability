@@ -24,6 +24,11 @@ services:
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_OTEL_PASSWORD}
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
       CLICKHOUSE_GRAFANA_PASSWORD: ${CLICKHOUSE_GRAFANA_PASSWORD}
+      # Read by clickhouse/initdb/02-create-analytics.sh, from initdb on an empty volume and from
+      # docker exec on an existing one, so no password ever appears on a command line.
+      CLICKHOUSE_ANALYTICS_WRITER_PASSWORD: ${CLICKHOUSE_ANALYTICS_WRITER_PASSWORD}
+      CLICKHOUSE_ANALYTICS_READER_PASSWORD: ${CLICKHOUSE_ANALYTICS_READER_PASSWORD}
+      CLICKHOUSE_ANALYTICS_MIGRATOR_PASSWORD: ${CLICKHOUSE_ANALYTICS_MIGRATOR_PASSWORD}
     ports:
       - "127.0.0.1:8123:8123"
     volumes:

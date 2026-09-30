@@ -1,0 +1,331 @@
+{
+  "uid": "platform-statistics",
+  "title": "Platform Statistics",
+  "description": "Platform totals, breakdowns and daily flows from luvax_analytics.platform_stats, filled by the half-hour collection job through the outbox. Gauges show each day's last bucket; flows are summed per day.",
+  "tags": ["luvax", "business"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": { "from": "now-7d", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Totals",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Users",
+      "description": "The last bucket of each day. Stories count only those not yet expired.",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": {"mode": "fixed", "fixedColor": "blue"} },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "none",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "sql",
+          "format": 0,
+          "rawSql": "SELECT day AS time, sum(value) AS users_total FROM (SELECT toStartOfDay(bucket_start) AS day, bucket_start, value, max(bucket_start) OVER (PARTITION BY toStartOfDay(bucket_start)) AS last_bucket FROM luvax_analytics.platform_stats FINAL WHERE metric_key = 'users_total' AND $__timeFilter(bucket_start)) WHERE bucket_start = last_bucket GROUP BY time ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Posts",
+      "description": "The last bucket of each day. Stories count only those not yet expired.",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": {"mode": "fixed", "fixedColor": "blue"} },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "none",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "sql",
+          "format": 0,
+          "rawSql": "SELECT day AS time, sum(value) AS posts_total FROM (SELECT toStartOfDay(bucket_start) AS day, bucket_start, value, max(bucket_start) OVER (PARTITION BY toStartOfDay(bucket_start)) AS last_bucket FROM luvax_analytics.platform_stats FINAL WHERE metric_key = 'posts_total' AND $__timeFilter(bucket_start)) WHERE bucket_start = last_bucket GROUP BY time ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Comments",
+      "description": "The last bucket of each day. Stories count only those not yet expired.",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": {"mode": "fixed", "fixedColor": "blue"} },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "none",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "sql",
+          "format": 0,
+          "rawSql": "SELECT day AS time, sum(value) AS comments_total FROM (SELECT toStartOfDay(bucket_start) AS day, bucket_start, value, max(bucket_start) OVER (PARTITION BY toStartOfDay(bucket_start)) AS last_bucket FROM luvax_analytics.platform_stats FINAL WHERE metric_key = 'comments_total' AND $__timeFilter(bucket_start)) WHERE bucket_start = last_bucket GROUP BY time ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Stories",
+      "description": "The last bucket of each day. Stories count only those not yet expired.",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": {"mode": "fixed", "fixedColor": "blue"} },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "none",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "sql",
+          "format": 0,
+          "rawSql": "SELECT day AS time, sum(value) AS stories_total FROM (SELECT toStartOfDay(bucket_start) AS day, bucket_start, value, max(bucket_start) OVER (PARTITION BY toStartOfDay(bucket_start)) AS last_bucket FROM luvax_analytics.platform_stats FINAL WHERE metric_key = 'stories_total' AND $__timeFilter(bucket_start)) WHERE bucket_start = last_bucket GROUP BY time ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "row",
+      "title": "Composition",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "panels": []
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Users by status",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "displayName": "${__field.labels.series}",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "axisSoftMin": 0,
+            "stacking": { "mode": "normal", "group": "A" }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "sql",
+          "format": 0,
+          "rawSql": "SELECT day AS time, dimension AS series, sum(value) AS value FROM (SELECT toStartOfDay(bucket_start) AS day, bucket_start, metric_key, dimension, value, max(bucket_start) OVER (PARTITION BY metric_key, toStartOfDay(bucket_start)) AS last_bucket FROM luvax_analytics.platform_stats FINAL WHERE metric_key IN ('users_by_status') AND $__timeFilter(bucket_start)) WHERE bucket_start = last_bucket GROUP BY time, series ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Users by role",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "displayName": "${__field.labels.series}",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "axisSoftMin": 0,
+            "stacking": { "mode": "normal", "group": "A" }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "sql",
+          "format": 0,
+          "rawSql": "SELECT day AS time, dimension AS series, sum(value) AS value FROM (SELECT toStartOfDay(bucket_start) AS day, bucket_start, metric_key, dimension, value, max(bucket_start) OVER (PARTITION BY metric_key, toStartOfDay(bucket_start)) AS last_bucket FROM luvax_analytics.platform_stats FINAL WHERE metric_key IN ('users_by_role') AND $__timeFilter(bucket_start)) WHERE bucket_start = last_bucket GROUP BY time, series ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Reports by status",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "displayName": "${__field.labels.series}",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "axisSoftMin": 0,
+            "stacking": { "mode": "normal", "group": "A" }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "sql",
+          "format": 0,
+          "rawSql": "SELECT day AS time, dimension AS series, sum(value) AS value FROM (SELECT toStartOfDay(bucket_start) AS day, bucket_start, metric_key, dimension, value, max(bucket_start) OVER (PARTITION BY metric_key, toStartOfDay(bucket_start)) AS last_bucket FROM luvax_analytics.platform_stats FINAL WHERE metric_key IN ('reports_by_status') AND $__timeFilter(bucket_start)) WHERE bucket_start = last_bucket GROUP BY time, series ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Reports by reason",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "displayName": "${__field.labels.series}",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "axisSoftMin": 0,
+            "stacking": { "mode": "normal", "group": "A" }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "sql",
+          "format": 0,
+          "rawSql": "SELECT day AS time, dimension AS series, sum(value) AS value FROM (SELECT toStartOfDay(bucket_start) AS day, bucket_start, metric_key, dimension, value, max(bucket_start) OVER (PARTITION BY metric_key, toStartOfDay(bucket_start)) AS last_bucket FROM luvax_analytics.platform_stats FINAL WHERE metric_key IN ('reports_by_reason') AND $__timeFilter(bucket_start)) WHERE bucket_start = last_bucket GROUP BY time, series ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "row",
+      "title": "Created per day",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 },
+      "panels": []
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Created per day",
+      "description": "Registrations, posts, comments, follows and likes created, summed over each UTC day. The current day is partial.",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 23 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "displayName": "${__field.labels.series}",
+          "custom": { "drawStyle": "bars", "fillOpacity": 80, "lineWidth": 1, "axisSoftMin": 0 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "sql",
+          "format": 0,
+          "rawSql": "SELECT toStartOfDay(bucket_start) AS time, metric_key AS series, sum(value) AS value FROM luvax_analytics.platform_stats FINAL WHERE metric_key IN ('registrations', 'posts_created', 'comments_created', 'follows_created', 'likes_created') AND $__timeFilter(bucket_start) GROUP BY time, series ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Admin actions by type per day",
+      "description": "Counted from the system of record at the end of each bucket. The moderation dashboard reads the audit log replica itself.",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 23 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "displayName": "${__field.labels.series}",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "axisSoftMin": 0,
+            "stacking": { "mode": "normal", "group": "A" }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "sql",
+          "format": 0,
+          "rawSql": "SELECT toStartOfDay(bucket_start) AS time, dimension AS series, sum(value) AS value FROM luvax_analytics.platform_stats FINAL WHERE metric_key = 'admin_actions_by_type' AND $__timeFilter(bucket_start) GROUP BY time, series ORDER BY time"
+        }
+      ]
+    }
+  ]
+}

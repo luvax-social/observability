@@ -26,9 +26,9 @@ endpoint, addressed by container name, not container IP (see `docs/deployment-ha
 | Service | Role |
 |---|---|
 | `otel-collector` | Receives OTLP traces/logs from the backend and container log files, exports both to ClickHouse |
-| `clickhouse` | Stores `otel.otel_logs` and `otel.otel_traces` (14 and 7 day TTL) |
+| `clickhouse` | Stores `otel.otel_logs` and `otel.otel_traces` (14 and 7 day TTL), and the backend's `luvax_analytics` database (see "Analytics database") |
 | `prometheus` | Scrapes the backend's management port, RabbitMQ, Gorse, every exporter above, and the origin TLS probe below; 30 day retention |
-| `grafana` | Ten provisioned dashboards across five folders, Discord-backed alerting, the only public component |
+| `grafana` | Thirteen provisioned dashboards across six folders, Discord-backed alerting, the only public component |
 | `docker-socket-proxy` | Read-only, `CONTAINERS`/`EVENTS`/`PING`/`VERSION`/`NETWORKS` only; the collector's and Prometheus's only path to the Docker API |
 | `blackbox-exporter` | Probes the Coolify proxy's origin TLS certificate per hostname (new in Phase 1.5) |
 | `postgres-exporter`, `redis-exporter`, `elasticsearch-exporter`, `node-exporter`, `cadvisor` | Infrastructure metrics for the dashboards above |
@@ -39,8 +39,8 @@ to the prior 7.3 GB / 2.0 CPU total.
 
 ## Dashboard folders
 
-Ten dashboards, grouped by category into five folders, each an explicit Grafana provisioning
-provider with its own `folderUid` (`grafana/provisioning/dashboards/dashboards.yaml`):
+Thirteen dashboards, grouped by category into six folders.
+Each folder is an explicit Grafana provisioning provider with its own `folderUid` (`grafana/provisioning/dashboards/dashboards.yaml`):
 
 | Folder | Dashboards |
 |---|---|
@@ -49,9 +49,11 @@ provider with its own `folderUid` (`grafana/provisioning/dashboards/dashboards.y
 | Messaging | RabbitMQ, Outbox & Inbox |
 | Application | JVM & HTTP |
 | Explore | Logs Explorer, Trace Explorer |
+| Business | Platform Statistics, Moderation Activity, User Activity |
 
-A sixth folder, **Business**, is reserved for Phase 2 (platform statistics, admin actions, user
-events) and is deliberately not created yet - there is nothing to put in it until that phase ships.
+The **Business** folder is new in Phase 2.
+Its three dashboards read the `luvax_analytics` database in ClickHouse through the existing `clickhouse` datasource, with a 7 day default range.
+Every query names its table with `FINAL`, because the tables are `ReplacingMergeTree` and an unmerged duplicate must not be counted.
 
 Alert rules live in their own folder, **Alerting**, separate from every dashboard folder (see
 `grafana/provisioning/alerting/rules.yaml`).
@@ -95,18 +97,51 @@ log discovery reads the backend compose project's own container names
   `logs-explorer` dashboard, filtered by service, level, free text or trace id.
 - Metrics: Prometheus, 30 day / 10 GB retention. Eight dashboards cover the JVM and HTTP layer, the
   outbox/inbox, RabbitMQ, PostgreSQL, Redis, Elasticsearch, Gorse, and the host and containers.
-- Alerts: eleven rules (the six baseline rules - DLQ not empty, outbox DEAD rows, an open circuit
-  breaker, a container restart loop, disk above 85 percent, a scrape target down - plus five added
-  in Phase 1.5: origin TLS certificate expiring, a stalled RabbitMQ queue, a stalled outbox
-  publisher, an unhealthy Elasticsearch cluster, and a high backend 5xx rate), delivered to a
-  Discord channel. Critical-severity alerts repeat hourly; warning-severity alerts keep the
-  original 4-hour repeat interval. **Every Phase 1.5 threshold is provisional**, to be revisited
-  after two weeks of production data: the RabbitMQ stall rule's 5-minute pending window, the
-  outbox-stall 300-second threshold, and the backend 5xx rule's 5 percent ratio and 20-error count
-  guard.
+- Alerts: fourteen rules, delivered to a Discord channel.
+  The six baseline rules are DLQ not empty, outbox DEAD rows, a circuit breaker that stays open or half-open for a minute, a container restart loop, disk above 85 percent, and a scrape target down.
+  Phase 1.5 added five: origin TLS certificate expiring, a stalled RabbitMQ queue, a stalled outbox publisher, an unhealthy Elasticsearch cluster, and a high backend 5xx rate.
+  Phase 2 added three: ClickHouse async inserts failing, analytics events dropped, and analytics ingestion falling behind.
+  Critical-severity alerts repeat hourly; warning-severity alerts keep the original 4-hour repeat interval.
+  **Every Phase 1.5 threshold is provisional**, to be revisited after two weeks of production data: the RabbitMQ stall rule's 5-minute pending window, the outbox-stall 300-second threshold, and the backend 5xx rule's 5 percent ratio and 20-error count guard.
+  The Phase 2 ingestion-lag rule fires above 5,000 ready messages held for 45 minutes.
+  The window comes from a measured reseed drain, in which the feedback queue stayed above 5,000 for about 20 minutes.
 
 Traces and logs are best effort: a missed export is not replayed, and both stores are disposable and
 rebuildable from nothing but live traffic. Neither is a source of truth.
+
+## Analytics database
+
+Phase 2 moves the backend's analytics onto this ClickHouse instance, in a database of its own, `luvax_analytics`.
+Its tables are `user_events`, `admin_actions` and `platform_stats`, all `ReplacingMergeTree`, created by the backend's own migration runner and not by anything in this repository.
+This repository provisions only the database, its users and their limits, in `clickhouse/initdb/02-create-analytics.sh`.
+
+| User | Grants | Used by |
+|---|---|---|
+| `luvax_analytics_writer` | `INSERT` on `luvax_analytics.*` | the backend's consumers and event recorder |
+| `luvax_analytics_reader` | `SELECT` on `luvax_analytics.*` | the backend's request-path and batch reads |
+| `luvax_analytics_migrator` | DDL, `TRUNCATE`, `OPTIMIZE`, `SELECT` and `INSERT` on `luvax_analytics.*` only | the backend's schema runner at startup and the seed reset |
+| `grafana_reader` | `SELECT` on `luvax_analytics.*` and on `system.asynchronous_insert_log` | the Business dashboards |
+
+Each application user runs on its own settings profile that caps memory (with a `CONST` per-user limit, so together they hold at most 2 GiB of the 3.2 GiB server cap), threads and execution time.
+The three passwords come from the ClickHouse container's own environment: `CLICKHOUSE_ANALYTICS_WRITER_PASSWORD`, `CLICKHOUSE_ANALYTICS_READER_PASSWORD` and `CLICKHOUSE_ANALYTICS_MIGRATOR_PASSWORD`.
+They must equal the backend's `ANALYTICS_CLICKHOUSE_WRITER_PASSWORD`, `ANALYTICS_CLICKHOUSE_READER_PASSWORD` and `ANALYTICS_CLICKHOUSE_MIGRATOR_PASSWORD`.
+
+The script is idempotent.
+`CREATE ... IF NOT EXISTS` makes each object, `ALTER` brings settings and passwords to the script's values on every run, and `GRANT` is a no-op when already held.
+Changing a password is therefore "change the environment variable, recreate the container, run the script again".
+
+- On an empty volume the ClickHouse image runs it automatically from `/docker-entrypoint-initdb.d`, after `01-create-users.sh` has created `grafana_reader`.
+- On an existing volume `initdb` never runs, so run the same file by hand: `docker exec <clickhouse container> bash /docker-entrypoint-initdb.d/02-create-analytics.sh`.
+  The container's environment supplies the passwords, so none appears on the command line.
+- Check the result with `SHOW GRANTS FOR luvax_analytics_writer, luvax_analytics_reader, luvax_analytics_migrator, grafana_reader`.
+
+The backend reaches ClickHouse over its JDBC HTTP interface.
+Locally that is `jdbc:clickhouse://localhost:8123/luvax_analytics`, because `compose.local.yaml` publishes `127.0.0.1:8123`.
+In production it is `jdbc:clickhouse://clickhouse-<observability resource uuid>:8123/luvax_analytics` on the shared `coolify` network.
+Bring the local instance up with `docker compose -f observability/compose.local.yaml --profile observability up -d clickhouse`.
+
+The "Async insert failures by table" panel reads `system.asynchronous_insert_log`, which ClickHouse creates lazily.
+On a server that has never flushed an asynchronous insert the panel reports an unknown table until the first one arrives; `SYSTEM FLUSH LOGS` creates the table at once.
 
 ## Production runbook
 
@@ -117,8 +152,7 @@ That document is also the entry point for the agent helping deploy this phase: i
 
 - Production Postgres major version: pin `docker/postgres` to whatever R0 finds; `18` where R0 has
   not run yet.
-- Postgres test images: stay on `postgres:16-alpine` for this phase; moving them is a separate
-  follow-up chore.
+- Postgres test images: the backend's integration tests now run on `postgres:18-alpine`, production's major version.
 - ClickHouse stays on the 26.3 LTS line until the host's CPU model changes; no source rebuild.
 - Inbox retention: 14 days accepted, backed by the DLQ and target-down alerts making a multi-day
   consumer outage visible within minutes.

@@ -1,0 +1,155 @@
+{
+  "uid": "moderation-activity",
+  "title": "Moderation Activity",
+  "description": "The audit log replica in luvax_analytics.admin_actions: what administrators and the system did, and how fresh the replica is.",
+  "tags": ["luvax", "business"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": { "from": "now-7d", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Actions",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Actions per day by type",
+      "gridPos": { "h": 9, "w": 16, "x": 0, "y": 1 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "displayName": "${__field.labels.series}",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "axisSoftMin": 0,
+            "stacking": { "mode": "normal", "group": "A" }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "sql",
+          "format": 0,
+          "rawSql": "SELECT toStartOfDay(created_at) AS time, action_type AS series, count() AS actions FROM luvax_analytics.admin_actions FINAL WHERE $__timeFilter(created_at) GROUP BY time, series ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Replication freshness",
+      "description": "Age of the newest replicated row, regardless of the time range. A quiet audit log is old by nature; compare with the ingestion lag alert for a stuck pipeline.",
+      "gridPos": { "h": 9, "w": 8, "x": 16, "y": 1 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 3600 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "sql",
+          "format": 1,
+          "rawSql": "SELECT if(count() = 0, NULL, dateDiff('second', max(replicated_at), now())) AS seconds_since_last_replicated_row FROM luvax_analytics.admin_actions FINAL"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "row",
+      "title": "Who and what",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 10 },
+      "panels": []
+    },
+    {
+      "id": 5,
+      "type": "barchart",
+      "title": "Actions by actor (top 10)",
+      "description": "A missing admin_id is shown as system: a system action, or an administrator whose account was deleted.",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 11 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": { "defaults": {"unit": "short"}, "overrides": [] },
+      "options": { "orientation": "horizontal", "valueSize": 12, "legend": {"showLegend": false} },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "sql",
+          "format": 1,
+          "rawSql": "SELECT if(admin_id IS NULL, 'system', toString(admin_id)) AS actor, count() AS actions FROM luvax_analytics.admin_actions FINAL WHERE $__timeFilter(created_at) GROUP BY actor ORDER BY actions DESC LIMIT 10"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "barchart",
+      "title": "Actions by target type",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 11 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": { "defaults": {"unit": "short"}, "overrides": [] },
+      "options": { "orientation": "horizontal", "valueSize": 12, "legend": {"showLegend": false} },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "sql",
+          "format": 1,
+          "rawSql": "SELECT ifNull(target_entity_type, 'none') AS target_type, count() AS actions FROM luvax_analytics.admin_actions FINAL WHERE $__timeFilter(created_at) GROUP BY target_type ORDER BY actions DESC"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "row",
+      "title": "Latest",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 20 },
+      "panels": []
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Latest 50 actions",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 21 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": { "defaults": {"unit": "short"}, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "sql",
+          "format": 1,
+          "rawSql": "SELECT created_at AS time, action_type, if(admin_id IS NULL, 'system', toString(admin_id)) AS actor, ifNull(toString(target_user_id), '') AS target_user, ifNull(target_entity_type, '') AS target_type, ifNull(reason, '') AS reason, toString(id) AS id FROM luvax_analytics.admin_actions FINAL WHERE $__timeFilter(created_at) ORDER BY created_at DESC, toString(id) DESC LIMIT 50"
+        }
+      ]
+    }
+  ]
+}
