@@ -9,10 +9,10 @@
 # on, because Traefik presents its own *.traefik.default certificate for that hostname, not a
 # real origin certificate for grafana.luvax.online. Probing it would always read
 # probe_success=0 for a reason that has nothing to do with certificate expiry. See
-# docs/deployment-handoff.md, "Phase 1.5" runbook, and its topology section.
+# docs/production-deployment-runbook.md, "Phase 1.5" runbook, and its topology section.
 #
 # www.luvax.online and coolify.luvax.online are also absent, for the same reason. A real
-# production discovery run (docs/deployment-handoff.md, "Phase 1.5" runbook, P0.5) found both
+# production discovery run (docs/production-deployment-runbook.md, "Phase 1.5" runbook, P0.5) found both
 # present issuer "CN = TRAEFIK DEFAULT CERT" via
 # `openssl s_client -connect localhost:443 -servername <host>`, not a real origin certificate -
 # only api.luvax.online and the apex luvax.online presented a real Let's Encrypt certificate.

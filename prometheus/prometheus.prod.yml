@@ -52,7 +52,7 @@ scrape_configs:
   # container IP sidesteps that ambiguity entirely: Docker's embedded DNS resolves a container's
   # name for every container on a network they share, regardless of which network Prometheus's
   # docker_sd_configs happened to pick for __meta_docker_network_name. There is deliberately no
-  # "keep" relabel rule on __meta_docker_network_name here (see docs/deployment-handoff.md,
+  # "keep" relabel rule on __meta_docker_network_name here (see docs/production-deployment-runbook.md,
   # "Phase 1.5" runbook, addressing proof): keeping only the "coolify" network is what would make
   # that ambiguity dangerous, by dropping the container's only emitted target if Prometheus picked
   # the resource's own network as primary instead.
@@ -77,7 +77,7 @@ scrape_configs:
 
   # Phase 1.5: origin TLS certificate expiry, probed against the Coolify proxy itself (not the
   # public https://<host> edge, which only measures Cloudflare's own certificate). See
-  # docs/deployment-handoff.md, "Phase 1.5" runbook, for the read-only discovery step that finds
+  # docs/production-deployment-runbook.md, "Phase 1.5" runbook, for the read-only discovery step that finds
   # the real container name and network for <COOLIFY_PROXY_CONTAINER> below.
   #
   # Only two hostnames probed, not four. A real P0.5 discovery run against production

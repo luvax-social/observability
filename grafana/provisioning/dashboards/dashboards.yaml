@@ -1,14 +1,14 @@
 apiVersion: 1
 # Phase 1.5: replaces the single flat "Luvax" provider with five providers grouped by category
 # (infrastructure, backing services, messaging, application, explore), per the folder table in
-# docs/deployment-handoff.md's "Phase 1.5" runbook. Each folderUid is explicit, so folder identity
+# docs/production-deployment-runbook.md's "Phase 1.5" runbook. Each folderUid is explicit, so folder identity
 # is deterministic rather than Grafana-auto-generated - verified in the P1.5-A rehearsal to
 # re-home an existing dashboard in place under its own uid, with no duplicate. Every dashboard's
 # own uid field is unchanged; only its path on disk and which provider's path picks it up moved.
 #
 # The old flat "Luvax" folder is not provisioned here and becomes an empty orphan once every
 # dashboard has moved out of it on first deploy; deleting it is an explicit, one-time runbook step
-# (see docs/deployment-handoff.md), not automatic.
+# (see docs/production-deployment-runbook.md), not automatic.
 #
 # Phase 2: the sixth folder, "Business" (platform statistics, moderation activity, user activity),
 # reads the luvax_analytics database through the same ClickHouse datasource.

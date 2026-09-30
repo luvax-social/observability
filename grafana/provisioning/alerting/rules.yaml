@@ -3,7 +3,7 @@ groups:
   - orgId: 1
     name: baseline
     # Phase 1.5: moved from folder "Luvax" to its own "Alerting" folder. The old flat "Luvax"
-    # folder is deleted once empty (docs/deployment-handoff.md, "Phase 1.5" runbook); alert rule
+    # folder is deleted once empty (docs/production-deployment-runbook.md, "Phase 1.5" runbook); alert rule
     # groups share the same folder namespace as dashboards, so leaving this group parented under
     # "Luvax" would have orphaned it the moment that folder was deleted. Alert rules get their own
     # folder instead of joining one of the five dashboard category folders, since a rule group
