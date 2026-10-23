@@ -16,6 +16,8 @@ reviews:
   # The review requests changes while findings are open and approves once they are resolved,
   # which is the signal an author or agent uses to know the pull request is ready to finalise.
   request_changes_workflow: true
+  # The author's own approval never counts, so the review stays a second pair of eyes.
+  allow_author_approval: false
   high_level_summary: true
   review_status: true
   review_details: false
@@ -48,9 +50,6 @@ reviews:
     ignore_title_keywords:
       - "wip"
       - "do not merge"
-    ignore_usernames:
-      - "dependabot[bot]"
-      - "renovate[bot]"
 
   # Dashboards are exported JSON with large generated panels, so they are reviewed through the
   # path instructions below only for the fields that matter and not line by line.
@@ -129,9 +128,10 @@ reviews:
       - name: "ClickHouse stays on the 26.3 line"
         mode: error
         instructions: |
-          Fail when a compose file sets a ClickHouse image tag newer than 26.5 or an unpinned tag
-          such as latest. Pass when every ClickHouse image is 26.3.x or the pull request does not
-          touch a ClickHouse image.
+          Fail when a compose file adds or changes a ClickHouse image tag to anything other than
+          the 26.3.x line, which includes an unpinned tag such as latest and any 26.4 or 26.5 tag.
+          Pass when every changed ClickHouse image is 26.3.x or the pull request does not touch a
+          ClickHouse image.
       - name: "Images are pinned"
         mode: error
         instructions: |
