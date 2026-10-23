@@ -1,0 +1,183 @@
+# CodeRabbit review configuration for the observability stack.
+# Reference: https://docs.coderabbit.ai/reference/configuration
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+language: en-US
+tone_instructions: >-
+  Professional and concise. Cite the file and line, state the concrete operational failure, and
+  skip style points that a linter already enforces.
+early_access: false
+enable_free_tier: true
+
+reviews:
+  # chill keeps the inline comments to defects a maintainer would act on, so the review-and-fix
+  # loop converges instead of chasing nitpicks.
+  profile: chill
+  # The review requests changes while findings are open and approves once they are resolved,
+  # which is the signal an author or agent uses to know the pull request is ready to finalise.
+  request_changes_workflow: true
+  # The author's own approval never counts, so the review stays a second pair of eyes.
+  allow_author_approval: false
+  high_level_summary: true
+  review_status: true
+  review_details: false
+  collapse_walkthrough: true
+  changed_files_summary: true
+  sequence_diagrams: false
+  estimate_code_review_effort: true
+  assess_linked_issues: true
+  related_issues: true
+  related_prs: true
+  poem: false
+  in_progress_fortune: false
+  suggested_labels: false
+  auto_apply_labels: false
+  suggested_reviewers: false
+  auto_assign_reviewers: false
+  # Adds a copy-paste instruction block to each finding so a coding agent can apply the fix.
+  enable_prompt_for_ai_agents: true
+  abort_on_close: true
+
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: true
+    # Fix commits pushed during review must be re-reviewed, so the pause is turned off.
+    auto_pause_after_reviewed_commits: 0
+    # main is the default branch and is always reviewed; develop covers a later branching model.
+    base_branches:
+      - "^develop$"
+    ignore_title_keywords:
+      - "wip"
+      - "do not merge"
+
+  # Dashboards are exported JSON with large generated panels, so they are reviewed through the
+  # path instructions below only for the fields that matter and not line by line.
+  path_filters:
+    - "!**/*.png"
+    - "!**/*.jpg"
+    - "!**/*.jpeg"
+    - "!**/*.svg"
+    - "!docs/asset/**"
+    - "!.env"
+
+  path_instructions:
+    - path: "compose.*.yaml"
+      instructions: |
+        Every image is pinned to an exact version tag, never latest. ClickHouse must stay on the
+        26.3 LTS line (26.3.33.24) and must not move past 26.5, because from 26.6 the default build
+        target needs AVX2 and the production host's CPU lacks it. Published ports are bound to
+        loopback unless the service is deliberately public (Grafana only in production). Secrets
+        come from environment variables, never literals. Services declare a healthcheck, a restart
+        policy and sensible resource limits, and dependencies use health conditions.
+    - path: "prometheus/**"
+      instructions: |
+        Scrape targets match the services in the compose files and the backend's management port
+        (8081) rather than the application port. Check job names, relabelling and retention flags,
+        and that an alert or recording rule references a metric that exists.
+    - path: "grafana/**"
+      instructions: |
+        Provisioning stays declarative. Datasource uids referenced by dashboards must exist,
+        credentials come from environment variables, and alert contact points never embed a webhook
+        URL or token.
+    - path: "dashboards/**/*.json"
+      instructions: |
+        A dashboard keeps a stable uid and title so links and provisioning survive. Queries use
+        provisioned datasource uids, not names, bound a time range, and avoid unbounded
+        ClickHouse scans. Flag a panel without a title or unit.
+    - path: "otel-collector/**"
+      instructions: |
+        Pipelines declare receivers, processors and exporters that all exist. memory_limiter comes
+        first and batch last. Container log discovery goes through the read-only socket proxy,
+        never the Docker socket directly. Exports are best effort and must not block the service.
+    - path: "clickhouse/**"
+      instructions: |
+        Provisioning is idempotent and safe to run twice. Users get the narrowest grants and a
+        settings profile with a memory cap. Passwords come from environment variables and no
+        default-user file with a password is committed.
+    - path: "scripts/**"
+      instructions: |
+        Shell scripts start with set -euo pipefail, quote variables, avoid destructive commands
+        on unvalidated paths, and use LF line endings.
+    - path: "docs/**"
+      instructions: |
+        Runbooks name exact commands and expected results, and never contain a real secret, host
+        credential or private address. Documentation is written for a maintainer who has not seen
+        the conversation.
+
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
+    title:
+      mode: warning
+      requirements: >-
+        Conventional Commits form type(scope): subject with a lowercase subject and at most 80
+        characters. The title must describe the change itself, not a task number or an internal
+        label.
+    description:
+      mode: warning
+    issue_assessment:
+      mode: warning
+    custom_checks:
+      - name: "ClickHouse stays on the 26.3 line"
+        mode: error
+        instructions: |
+          Fail when a compose file adds or changes a ClickHouse image tag to anything other than
+          the 26.3.x line, which includes an unpinned tag such as latest and any 26.4 or 26.5 tag.
+          Pass when every changed ClickHouse image is 26.3.x or the pull request does not touch a
+          ClickHouse image.
+      - name: "Images are pinned"
+        mode: error
+        instructions: |
+          Fail when a compose file adds or changes an image without an exact version tag, or uses
+          latest. Pass otherwise.
+      - name: "No secrets committed"
+        mode: error
+        instructions: |
+          Fail when the diff contains a password, token, API key, webhook URL or private key as a
+          literal value in any tracked file, including .env files and users.d XML. Placeholders
+          and ${VARIABLE} references pass.
+
+  tools:
+    gitleaks:
+      enabled: true
+    osvScanner:
+      enabled: true
+    yamllint:
+      enabled: true
+    shellcheck:
+      enabled: true
+    hadolint:
+      enabled: true
+    actionlint:
+      enabled: true
+    dotenvLint:
+      enabled: true
+    # The documentation is written one sentence per line.
+    markdownlint:
+      enabled: false
+    languagetool:
+      enabled: false
+    checkov:
+      enabled: false
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  opt_out: false
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "README.md"
+      - "docs/production-deployment-runbook.md"
+  learnings:
+    scope: local
+  pull_requests:
+    scope: local
